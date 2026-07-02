@@ -1,0 +1,64 @@
+import { BaseRepository } from '../../api/base.repository';
+import { LoginRequestDto, LoginResponseDto, RefreshTokenResponseDto, RegisterRequestDto, RegisterResponseDto, ApiResponse } from '../../../domain/dto/auth.dto';
+import { IAuthService } from '../auth.service.interface';
+
+export interface ForgotPasswordRequestDto {
+  email: string;
+}
+
+export interface ChangePasswordRequestDto {
+  userId: number;
+  currentPassword: string;
+  newPassword: string;
+}
+
+export class AuthService extends BaseRepository implements IAuthService {
+  constructor() {
+    super('/Auth');
+  }
+
+  async login(dto: LoginRequestDto): Promise<LoginResponseDto> {
+    const response = await this.post<ApiResponse<LoginResponseDto>>('/login', dto);
+    if (!response.success) {
+      throw new Error(response.message || 'Login failed');
+    }
+    return response.data;
+  }
+
+  async register(dto: RegisterRequestDto): Promise<RegisterResponseDto> {
+    const response = await this.post<ApiResponse<RegisterResponseDto>>('/register', dto);
+    if (!response.success) {
+      throw new Error(response.message || 'Registration failed');
+    }
+    return response.data;
+  }
+
+  async logout(): Promise<void> {
+    // The refresh token lives in an httpOnly cookie the browser controls, so only the
+    // server can clear it -- this call is required, it's not just local cleanup.
+    await this.post<ApiResponse<unknown>>('/revoke-refresh', {});
+  }
+
+  async refreshToken(): Promise<RefreshTokenResponseDto> {
+    const response = await this.post<ApiResponse<RefreshTokenResponseDto>>('/refresh', {});
+    if (!response.success) {
+      throw new Error(response.message || 'Token refresh failed');
+    }
+    return response.data;
+  }
+
+  async forgotPassword(dto: ForgotPasswordRequestDto): Promise<string> {
+    const response = await this.post<ApiResponse<{ message: string }>>('/forgot-password', dto);
+    if (!response.success) {
+      throw new Error(response.message || 'Failed to send reset email');
+    }
+    return response.data?.message || 'Reset link sent';
+  }
+
+  async changePassword(dto: ChangePasswordRequestDto): Promise<void> {
+    const response = await this.post<ApiResponse<any>>('/change-password', dto);
+    if (!response.success) {
+      throw new Error(response.message || 'Failed to change password');
+    }
+  }
+}

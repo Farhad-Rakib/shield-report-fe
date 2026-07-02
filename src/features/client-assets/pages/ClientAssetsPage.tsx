@@ -1,0 +1,295 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ShieldCheck, ShieldOff, Play } from 'lucide-react';
+import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
+import { Modal } from '../../../components/ui/Modal/Modal';
+import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
+import { toast } from '../../../components/ui/Toast/toast.store';
+import { CriticalityBadge, EnvironmentBadge } from '../../../components/badges/PentestBadges';
+import { useAuthStore } from '../../../features/auth/store/auth.store';
+import { clientAssetApi } from '../../../core/api/services/client-asset.api';
+import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
+import { scanApi } from '../../../core/api/services/scan.api';
+import { ClientAsset } from '../../../domain/models/client-asset.model';
+import { ScanTool } from '../../../domain/models/scan.model';
+import { CreateClientAssetRequestDto } from '../../../domain/dto/client-asset.dto';
+
+const SCAN_TOOLS: ScanTool[] = ['Naabu', 'Nuclei', 'Reconftw'];
+
+export const ClientAssetsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const tokenPayload = useAuthStore((s) => s.tokenPayload);
+  const isClientPortalUser = !!tokenPayload?.isClientPortalUser;
+  const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [scanAsset, setScanAsset] = useState<ClientAsset | null>(null);
+  const [selectedTools, setSelectedTools] = useState<ScanTool[]>([]);
+
+  const { data: orgData } = useQuery({
+    queryKey: ['client-organizations-picker'],
+    queryFn: () => clientOrganizationApi.getOrganizations({ pageSize: 100 }),
+  });
+  const organizations = orgData?.data ?? [];
+  const selectedOrg = organizations.find((org) => org.id === clientOrganizationId);
+  const selfServiceScanningAllowed = !isClientPortalUser || selectedOrg?.allowSelfServiceScanning !== false;
+
+  useEffect(() => {
+    if (clientOrganizationId === null && organizations.length > 0) {
+      setClientOrganizationId(organizations[0].id);
+    }
+  }, [organizations, clientOrganizationId]);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['client-assets', clientOrganizationId],
+    queryFn: () => clientAssetApi.getAssetsForClient(clientOrganizationId!),
+    enabled: clientOrganizationId !== null,
+  });
+  const assets = data?.data ?? [];
+
+  const createMutation = useMutation({
+    mutationFn: (dto: CreateClientAssetRequestDto) => clientAssetApi.createAsset(clientOrganizationId!, dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-assets', clientOrganizationId] });
+      toast.success('Asset registered successfully');
+      setShowAddModal(false);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to register asset'),
+  });
+
+  const authorizeMutation = useMutation({
+    mutationFn: (assetId: number) => clientAssetApi.authorizeForScanning(assetId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-assets', clientOrganizationId] });
+      toast.success('Asset authorized for scanning');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to authorize asset'),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (assetId: number) => clientAssetApi.revokeScanAuthorization(assetId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['client-assets', clientOrganizationId] });
+      toast.success('Scan authorization revoked');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to revoke authorization'),
+  });
+
+  const createScanMutation = useMutation({
+    mutationFn: ({ assetId, tools }: { assetId: number; tools: ScanTool[] }) =>
+      scanApi.createScan(assetId, { tools }),
+    onSuccess: (scans) => {
+      toast.success(`Scan started with ${scans.length} tool${scans.length === 1 ? '' : 's'}`);
+      setScanAsset(null);
+      setSelectedTools([]);
+      navigate(`/scans/${scans[0].publicId}`);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to start scan'),
+  });
+
+  const createFields: FormField[] = [
+    { name: 'name', label: 'Asset Name', type: 'text', required: true, placeholder: 'Public Web App' },
+    {
+      name: 'assetType',
+      label: 'Asset Type',
+      type: 'select',
+      required: true,
+      options: [
+        { label: 'Web URL', value: 'WebUrl' },
+        { label: 'IP Range', value: 'IpRange' },
+        { label: 'Mobile App', value: 'MobileApp' },
+        { label: 'API', value: 'Api' },
+        { label: 'Cloud Environment', value: 'CloudEnvironment' },
+        { label: 'Other', value: 'Other' },
+      ],
+    },
+    { name: 'identifier', label: 'Identifier (URL / IP / Package)', type: 'text', required: true, placeholder: 'https://app.example.com' },
+    {
+      name: 'environment',
+      label: 'Environment',
+      type: 'select',
+      required: true,
+      options: [
+        { label: 'Unknown', value: 'Unknown' },
+        { label: 'Development', value: 'Development' },
+        { label: 'Staging', value: 'Staging' },
+        { label: 'Production', value: 'Production' },
+      ],
+    },
+  ];
+
+  const handleCreate = (data: Record<string, any>) => {
+    createMutation.mutate({
+      clientOrganizationId: clientOrganizationId!,
+      name: data.name,
+      assetType: data.assetType,
+      identifier: data.identifier,
+      environment: data.environment,
+      criticality: 'Low',
+    });
+  };
+
+  const columns: Column<ClientAsset>[] = [
+    {
+      key: 'name',
+      label: 'Asset',
+      render: (_, asset) => (
+        <div>
+          <p className="font-medium text-gray-900 dark:text-white">{asset.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{asset.identifier}</p>
+        </div>
+      ),
+    },
+    { key: 'assetType', label: 'Type' },
+    { key: 'environment', label: 'Environment', render: (_, asset) => <EnvironmentBadge environment={asset.environment} /> },
+    { key: 'criticality', label: 'Criticality', render: (_, asset) => <CriticalityBadge criticality={asset.criticality} /> },
+    {
+      key: 'isAuthorizedForScanning',
+      label: 'Scan Authorization',
+      render: (_, asset) =>
+        asset.isAuthorizedForScanning ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+            <ShieldCheck className="w-3 h-3" /> Authorized
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+            <ShieldOff className="w-3 h-3" /> Not Authorized
+          </span>
+        ),
+    },
+  ];
+
+  const rowActions: RowAction<ClientAsset>[] = [
+    {
+      icon: ShieldCheck,
+      label: 'Authorize for Scanning',
+      onClick: (asset) => authorizeMutation.mutate(asset.id),
+      variant: 'success',
+      show: (asset) => !asset.isAuthorizedForScanning,
+    },
+    {
+      icon: ShieldOff,
+      label: 'Revoke Scan Authorization',
+      onClick: (asset) => revokeMutation.mutate(asset.id),
+      variant: 'danger',
+      show: (asset) => asset.isAuthorizedForScanning,
+    },
+    {
+      icon: Play,
+      label: 'Run Scan',
+      onClick: (asset) => {
+        setScanAsset(asset);
+        setSelectedTools([]);
+      },
+      variant: 'primary',
+      show: (asset) => asset.isAuthorizedForScanning && selfServiceScanningAllowed,
+    },
+  ];
+
+  const toggleTool = (tool: ScanTool) => {
+    setSelectedTools((prev) => (prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool]));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Client Assets</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">Register assets, authorize them for scanning, and launch scans</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Client Organization</label>
+          {organizations.length === 0 ? (
+            <Link to="/clients" className="text-sm text-blue-600 hover:underline">
+              Register a client organization first
+            </Link>
+          ) : (
+            <select
+              value={clientOrganizationId ?? ''}
+              onChange={(e) => setClientOrganizationId(Number(e.target.value))}
+              className="w-56 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {isClientPortalUser && !selfServiceScanningAllowed && (
+        <div className="px-4 py-3 text-sm rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+          Self-service scanning is currently disabled for your organization — contact your pentest team to request a scan.
+        </div>
+      )}
+
+      <DataTable
+        columns={columns}
+        data={assets}
+        isLoading={isLoading}
+        error={error?.message}
+        searchable={false}
+        emptyState={{ title: 'No assets found', description: 'Register an asset for this client organization to get started' }}
+        actions={{ add: { label: 'Add Asset', onClick: () => setShowAddModal(true) } }}
+        rowActions={rowActions}
+        onRetry={() => refetch()}
+      />
+
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Register New Asset" size="md">
+        <DynamicForm
+          fields={createFields}
+          onSubmit={handleCreate}
+          submitLabel="Register Asset"
+          onCancel={() => setShowAddModal(false)}
+          isLoading={createMutation.isPending}
+        />
+      </Modal>
+
+      <Modal isOpen={scanAsset !== null} onClose={() => setScanAsset(null)} title="Run Scan" size="md">
+        {scanAsset && (
+          <div className="space-y-4">
+            <div>
+              <p className="font-medium text-gray-900 dark:text-white">{scanAsset.name}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{scanAsset.identifier}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select scan tools</p>
+              <div className="space-y-2">
+                {SCAN_TOOLS.map((tool) => (
+                  <label key={tool} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTools.includes(tool)}
+                      onChange={() => toggleTool(tool)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{tool}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setScanAsset(null)}
+                disabled={createScanMutation.isPending}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={selectedTools.length === 0 || createScanMutation.isPending}
+                onClick={() => createScanMutation.mutate({ assetId: scanAsset.id, tools: selectedTools })}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                Start Scan
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+};
