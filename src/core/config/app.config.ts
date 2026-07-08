@@ -1,3 +1,14 @@
+// Populated at container startup (see shield-report-fe/docker/entrypoint.sh) so a single built
+// image can be pointed at whatever host:port it's deployed behind, without rebuilding.
+declare global {
+  interface Window {
+    __RUNTIME_CONFIG__?: { API_BASE_URL?: string };
+  }
+}
+
+const runtimeApiBaseUrl =
+  (typeof window !== 'undefined' && window.__RUNTIME_CONFIG__?.API_BASE_URL) || undefined;
+
 export const AppConfig = {
   app: {
     name: 'Shield Report',
@@ -7,7 +18,7 @@ export const AppConfig = {
   },
 
   api: {
-    baseURL: 'https://localhost:5001/api/v1',
+    baseURL: runtimeApiBaseUrl || import.meta.env.VITE_API_BASE_URL || 'https://localhost:5001/api/v1',
     timeout: 30000,
     withCredentials: true,
   },
