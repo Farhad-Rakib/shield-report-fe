@@ -28,4 +28,5 @@ export interface Scan {
   requestedByUserId: number;
   errorMessage: string | null;
   rawOutput: string | null;
+  nextScanPublicId: string | null;
 }

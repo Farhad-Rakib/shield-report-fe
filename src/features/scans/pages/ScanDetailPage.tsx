@@ -3,10 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
 import { ScanConsolePane } from '../../../components/scan/ScanConsolePane';
+import { ScanChainProgress } from '../../../components/scan/ScanChainProgress';
 import { ScanStatusBadge, SeverityBadge } from '../../../components/badges/PentestBadges';
 import { Loader } from '../../../components/ui/Loader/Loader';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
-import { useScanConsoleHub } from '../../../core/hooks/useScanConsoleHub';
+import { useScanChainConsole } from '../../../core/hooks/useScanChainConsole';
 import { scanApi } from '../../../core/api/services/scan.api';
 import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
 import { ScanStatus } from '../../../domain/models/scan.model';
@@ -23,27 +24,34 @@ export const ScanDetailPage: React.FC = () => {
     enabled: !!publicId,
   });
 
-  const { lines, status: hubStatus, connectionError } = useScanConsoleHub(publicId ?? null);
-  const effectiveStatus: ScanStatus | undefined = (hubStatus as ScanStatus | null) ?? scan?.status;
+  const { lines, steps, connectionError } = useScanChainConsole(scan);
 
-  // The scan can finish (or fail, e.g. Reconftw in under a second) before the browser's
-  // SignalR connection joins the scan's group, so live-only `lines` can end up empty.
-  // Once the scan reaches a terminal state, the server-persisted full log (`scan.rawOutput`)
-  // is authoritative and always complete — prefer it over the possibly-partial live stream.
-  const displayLines = scan?.rawOutput ? scan.rawOutput.split('\n').filter((line) => line.length > 0) : lines;
+  // The whole chain is done once its last known step reaches a terminal state — individual
+  // steps' own statuses drive ScanChainProgress's icons/spinner, this is just "is there
+  // anything left to run".
+  const lastStep = steps[steps.length - 1];
+  const chainComplete = !!lastStep && TERMINAL_STATUSES.includes(lastStep.status);
+  const runningStep = steps.find((s) => s.status === 'Running');
+  const overallStatus: ScanStatus | undefined = runningStep
+    ? 'Running'
+    : chainComplete
+      ? lastStep.status
+      : scan?.status;
 
   useEffect(() => {
-    if (hubStatus && TERMINAL_STATUSES.includes(hubStatus as ScanStatus)) {
+    if (chainComplete) {
       queryClient.invalidateQueries({ queryKey: ['scan', publicId] });
     }
-  }, [hubStatus, publicId, queryClient]);
+  }, [chainComplete, publicId, queryClient]);
 
-  const { data: vulnData } = useQuery({
-    queryKey: ['scan-vulnerabilities', scan?.id],
-    queryFn: () => vulnerabilityApi.getVulnerabilities({ scanId: scan!.id }),
-    enabled: !!scan && effectiveStatus === 'Completed',
+  // Vulnerabilities are tied to whichever tool's Scan actually created them, not necessarily
+  // the root scan the URL points at — fan out across every step in the resolved chain and merge.
+  const { data: vulnResults } = useQuery({
+    queryKey: ['scan-vulnerabilities', steps.map((s) => s.id)],
+    queryFn: () => Promise.all(steps.map((s) => vulnerabilityApi.getVulnerabilities({ scanId: s.id }))),
+    enabled: chainComplete && steps.length > 0,
   });
-  const vulnerabilities = vulnData?.data ?? [];
+  const vulnerabilities = vulnResults?.flatMap((page) => page.data) ?? [];
 
   if (isLoading) return <Loader />;
   if (error || !scan) return <ErrorState message={error?.message || 'Scan not found'} retry={() => refetch()} />;
@@ -55,8 +63,10 @@ export const ScanDetailPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" /> Back to Assets
         </Link>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{scan.tool} Scan</h1>
-          {effectiveStatus && <ScanStatusBadge status={effectiveStatus} />}
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {steps.length > 1 ? 'Scan Chain' : `${scan.tool} Scan`}
+          </h1>
+          {overallStatus && <ScanStatusBadge status={overallStatus} />}
         </div>
         <p className="text-gray-600 dark:text-gray-400 mt-1">{scan.clientAssetName}</p>
       </div>
@@ -67,12 +77,14 @@ export const ScanDetailPage: React.FC = () => {
         </div>
       )}
 
+      <ScanChainProgress steps={steps} />
+
       <div>
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>
-        <ScanConsolePane lines={displayLines} />
+        <ScanConsolePane lines={lines} />
       </div>
 
-      {effectiveStatus === 'Completed' && (
+      {chainComplete && (
         <div>
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Vulnerabilities Found ({vulnerabilities.length})
