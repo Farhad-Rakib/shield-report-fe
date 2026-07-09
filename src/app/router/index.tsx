@@ -202,7 +202,7 @@ export const router = createBrowserRouter([
       {
         path: 'vulnerabilities/new',
         element: (
-          <PermissionGuard permissions={[Permissions.VulnerabilitiesCreate]}>
+          <PermissionGuard permissions={[Permissions.VulnerabilitiesRead]}>
             <VulnerabilityCreatePage />
           </PermissionGuard>
         ),
