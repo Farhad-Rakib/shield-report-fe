@@ -40,6 +40,19 @@ function decodeJwtPayload(token: string): TokenPayload | null {
   }
 }
 
+// SuperAdmin gets zero explicit RolePermission rows by design (see RbacSeeder.cs — "SuperAdmin
+// bypasses permission checks at runtime; do NOT assign explicit permissions here"), so its JWT's
+// permission claim is empty. The backend bypasses via PermissionAuthorizationHandler's own role
+// check; mirror that here, or every hasPermission(...)-gated control in the app silently hides
+// itself for the one account that's actually allowed to do everything.
+function isSuperAdmin(tokenPayload: TokenPayload | null): boolean {
+  if (!tokenPayload) return false;
+  return (
+    tokenPayload.role === 'SuperAdmin' ||
+    tokenPayload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] === 'SuperAdmin'
+  );
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -105,6 +118,7 @@ export const useAuthStore = create<AuthState>()(
       hasPermission: (permission: string): boolean => {
         const { tokenPayload } = get();
         if (!tokenPayload) return false;
+        if (isSuperAdmin(tokenPayload)) return true;
         const perms = tokenPayload.permissions || tokenPayload.permission || [];
         if (Array.isArray(perms)) return perms.includes(permission);
         return false;
@@ -113,6 +127,7 @@ export const useAuthStore = create<AuthState>()(
       hasAnyPermission: (permissions: string[]): boolean => {
         const { tokenPayload } = get();
         if (!tokenPayload) return false;
+        if (isSuperAdmin(tokenPayload)) return true;
         const perms: string[] = tokenPayload.permissions || tokenPayload.permission || [];
         if (!Array.isArray(perms)) return false;
         return permissions.some(p => perms.includes(p));
@@ -121,6 +136,7 @@ export const useAuthStore = create<AuthState>()(
       hasAllPermissions: (permissions: string[]): boolean => {
         const { tokenPayload } = get();
         if (!tokenPayload) return false;
+        if (isSuperAdmin(tokenPayload)) return true;
         const perms: string[] = tokenPayload.permissions || tokenPayload.permission || [];
         if (!Array.isArray(perms)) return false;
         return permissions.every(p => perms.includes(p));
