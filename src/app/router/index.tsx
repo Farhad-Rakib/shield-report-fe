@@ -16,7 +16,6 @@ import { PermissionsPage } from '../../features/permissions/pages/PermissionsPag
 import { RolePermissionsPage } from '../../features/role-permissions/pages/RolePermissionsPage';
 import { UserRolesPage } from '../../features/user-roles/pages/UserRolesPage';
 import { MenuPage } from '../../features/menu/pages/MenuPage';
-import { ReportsPage } from '../../features/reports/pages/ReportsPage';
 import { PreferencesPage } from '../../features/preferences/pages/PreferencesPage';
 import { ProfilePage } from '../../features/profile/pages/ProfilePage';
 import { SiteSettingsPage } from '../../features/site-settings/pages/SiteSettingsPage';
@@ -112,14 +111,6 @@ export const router = createBrowserRouter([
         element: (
           <PermissionGuard permissions={[Permissions.MenusRead]}>
             <MenuPage />
-          </PermissionGuard>
-        ),
-      },
-      {
-        path: 'reports',
-        element: (
-          <PermissionGuard permissions={[Permissions.ReportsRead]}>
-            <ReportsPage />
           </PermissionGuard>
         ),
       },

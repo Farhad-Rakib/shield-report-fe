@@ -19,8 +19,6 @@ const iconMap: Record<string, string> = {
   permissions: 'Key',
   'user-roles': 'UserCheck',
   settings: 'Settings',
-  reports: 'FileText',
-  'chart-bar': 'BarChart3',
   activity: 'Activity',
   home: 'Home',
   products: 'Package',

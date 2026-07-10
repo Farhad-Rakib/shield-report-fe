@@ -10,7 +10,6 @@ export const Permissions = {
   RolePermissionsRead: 'role-permissions.read',
   UserRolesRead: 'user-roles.read',
   MenusRead: 'menus.read',
-  ReportsRead: 'reports.read',
   DashboardRead: 'dashboard.read',
   SiteSettingsRead: 'site-settings.read',
 
