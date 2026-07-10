@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, Radar, Circle, Ban, ArrowRight } from 'lucide-react';
-import { ChainStep } from '../../core/hooks/useScanChainConsole';
+import { ChainStep, ScanProgress } from '../../core/hooks/useScanChainConsole';
+import { ScanProgressBar } from './ScanProgressBar';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -33,9 +34,10 @@ interface ScanChainProgressProps {
   steps: ChainStep[];
   latestPhase: string | null;
   findingCounts: Record<string, number>;
+  progress: ScanProgress | null;
 }
 
-export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps, latestPhase, findingCounts }) => {
+export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps, latestPhase, findingCounts, progress }) => {
   const activeStep = steps.find((s) => s.status === 'Running');
   const isActiveRunning = !!activeStep;
   const spinner = useSpinnerFrame(isActiveRunning);
@@ -75,6 +77,8 @@ export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps, lat
           <span className="inline-block w-4">{spinner}</span> {latestPhase}
         </p>
       )}
+
+      <ScanProgressBar progress={progress} active={isActiveRunning} />
     </div>
   );
 };

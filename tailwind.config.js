@@ -21,12 +21,17 @@ export default {
           '0%, 50%': { opacity: '1' },
           '51%, 100%': { opacity: '0' },
         },
+        indeterminate: {
+          '0%': { transform: 'translateX(-100%) scaleX(0.5)' },
+          '100%': { transform: 'translateX(200%) scaleX(0.5)' },
+        },
       },
       animation: {
         float: 'float 4s ease-in-out infinite',
         'fade-in-up': 'fade-in-up 0.4s ease-out forwards',
         'radar-sweep': 'radar-sweep 4s linear infinite',
         blink: 'blink 1s step-end infinite',
+        indeterminate: 'indeterminate 1.2s ease-in-out infinite',
       },
     },
   },

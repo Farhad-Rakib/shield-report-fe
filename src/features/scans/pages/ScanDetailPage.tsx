@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
 import { ScanConsolePane } from '../../../components/scan/ScanConsolePane';
 import { ScanChainProgress } from '../../../components/scan/ScanChainProgress';
+import { FindingsPanel } from '../../../components/scan/FindingsPanel';
 import { ScanStatusBadge, SeverityBadge } from '../../../components/badges/PentestBadges';
 import { Loader } from '../../../components/ui/Loader/Loader';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
@@ -24,7 +25,8 @@ export const ScanDetailPage: React.FC = () => {
     enabled: !!publicId,
   });
 
-  const { entries, steps, connectionError, latestPhase, findingCounts } = useScanChainConsole(scan);
+  const { entries, steps, connectionError, latestPhase, findingCounts, progress } = useScanChainConsole(scan);
+  const liveFindings = entries.filter((e): e is Extract<typeof entries[number], { kind: 'finding' }> => e.kind === 'finding');
 
   // The whole chain is done once its last known step reaches a terminal state — individual
   // steps' own statuses drive ScanChainProgress's icons/spinner, this is just "is there
@@ -77,7 +79,14 @@ export const ScanDetailPage: React.FC = () => {
         </div>
       )}
 
-      <ScanChainProgress steps={steps} latestPhase={latestPhase} findingCounts={findingCounts} />
+      <ScanChainProgress steps={steps} latestPhase={latestPhase} findingCounts={findingCounts} progress={progress} />
+
+      {liveFindings.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Findings ({liveFindings.length})</h2>
+          <FindingsPanel findings={liveFindings} />
+        </div>
+      )}
 
       <div>
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>

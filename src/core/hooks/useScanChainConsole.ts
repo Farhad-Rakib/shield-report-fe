@@ -28,6 +28,23 @@ interface ScanStatusEvent {
   status: string;
 }
 
+interface ScanProgressEvent {
+  scanPublicId: string;
+  percent: number;
+  requests: number | null;
+  rps: number | null;
+  matched: number | null;
+  total: number | null;
+}
+
+export interface ScanProgress {
+  percent: number;
+  requests: number | null;
+  rps: number | null;
+  matched: number | null;
+  total: number | null;
+}
+
 // One typed entry per console line — lets ScanConsolePane render backend-narrated progress,
 // raw tool output, and live parsed findings with distinct treatment instead of one flat text feed.
 export type ConsoleEntry =
@@ -73,6 +90,10 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
   // attribute each one directly without parsing entry text.
   const [findingCounts, setFindingCounts] = useState<Record<string, number>>({});
   const [latestPhase, setLatestPhase] = useState<string | null>(null);
+  // Null means "no completion percentage reported for the current step" (Naabu/Reconftw don't
+  // report one, and Nuclei hasn't sent its first -stats line yet) — the console falls back to
+  // an indeterminate bar in that case rather than showing a stale or fabricated number.
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
   const rootPublicIdRef = useRef<string | null>(null);
 
   // (Re)initialize only when a *different* root scan loads — React Query refetches the same
@@ -85,6 +106,7 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
     setEntries([]);
     setFindingCounts({});
     setLatestPhase(null);
+    setProgress(null);
     setSteps([{ id: rootScan.id, publicId: rootScan.publicId, tool: rootScan.tool, status: rootScan.status }]);
     setActivePublicId(rootScan.publicId);
 
@@ -162,6 +184,8 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
     // promise chain no-op instead of clobbering state set by the current one.
     let cancelled = false;
     setConnectionError(null);
+    // A new step starting shouldn't keep showing the previous tool's last-known percent.
+    setProgress(null);
 
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(`${getHubBaseUrl()}/hubs/notifications`, {
@@ -187,6 +211,12 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       if (!cancelled && event.scanPublicId === activePublicId) {
         setEntries((prev) => [...prev, { kind: 'finding', title: event.title, severity: event.severity, endpoint: event.endpoint }]);
         setFindingCounts((prev) => ({ ...prev, [activePublicId]: (prev[activePublicId] ?? 0) + 1 }));
+      }
+    });
+
+    connection.on('ScanProgress', (event: ScanProgressEvent) => {
+      if (!cancelled && event.scanPublicId === activePublicId) {
+        setProgress({ percent: event.percent, requests: event.requests, rps: event.rps, matched: event.matched, total: event.total });
       }
     });
 
@@ -227,5 +257,5 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
     };
   }, [activePublicId]);
 
-  return { entries, steps, activePublicId, connectionError, findingCounts, latestPhase };
+  return { entries, steps, activePublicId, connectionError, findingCounts, latestPhase, progress };
 }
