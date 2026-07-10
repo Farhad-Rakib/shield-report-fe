@@ -24,7 +24,7 @@ export const ScanDetailPage: React.FC = () => {
     enabled: !!publicId,
   });
 
-  const { lines, steps, connectionError } = useScanChainConsole(scan);
+  const { entries, steps, connectionError, latestPhase, findingCounts } = useScanChainConsole(scan);
 
   // The whole chain is done once its last known step reaches a terminal state — individual
   // steps' own statuses drive ScanChainProgress's icons/spinner, this is just "is there
@@ -59,11 +59,11 @@ export const ScanDetailPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <Link to="/assets" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline mb-2">
+        <Link to="/assets" className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-cyan-400 hover:underline mb-2">
           <ArrowLeft className="w-4 h-4" /> Back to Assets
         </Link>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white font-mono">
             {steps.length > 1 ? 'Scan Chain' : `${scan.tool} Scan`}
           </h1>
           {overallStatus && <ScanStatusBadge status={overallStatus} />}
@@ -77,11 +77,11 @@ export const ScanDetailPage: React.FC = () => {
         </div>
       )}
 
-      <ScanChainProgress steps={steps} />
+      <ScanChainProgress steps={steps} latestPhase={latestPhase} findingCounts={findingCounts} />
 
       <div>
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>
-        <ScanConsolePane lines={lines} />
+        <ScanConsolePane entries={entries} activeTool={runningStep?.tool} live={!!runningStep} />
       </div>
 
       {chainComplete && (

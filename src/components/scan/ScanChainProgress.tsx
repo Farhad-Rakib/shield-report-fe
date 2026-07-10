@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, Loader2, Circle, Ban, ArrowRight } from 'lucide-react';
+import { CheckCircle2, XCircle, Radar, Circle, Ban, ArrowRight } from 'lucide-react';
 import { ChainStep } from '../../core/hooks/useScanChainConsole';
-
-// Cosmetic only — there's no granular real progress within a single tool run, just raw output
-// lines, so this cycles a few plausible status phrases per tool while it's Running, in the
-// spirit of how nuclei/naabu's own CLI banners narrate what they're doing.
-const PHRASES: Record<string, string[]> = {
-  Naabu: ['Discovering open ports...', 'Probing hosts...', 'Mapping attack surface...'],
-  Nuclei: ['Matching vulnerability templates...', 'Running detection signatures...', 'Extracting results...'],
-  Reconftw: ['Enumerating subdomains...', 'Resolving hosts...', 'Expanding recon scope...'],
-};
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -23,69 +14,65 @@ function useSpinnerFrame(active: boolean): string {
   return SPINNER_FRAMES[frame];
 }
 
-function useCyclingPhrase(tool: string, active: boolean): string {
-  const phrases = PHRASES[tool] ?? ['Scanning...'];
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    setIndex(0);
-    if (!active) return;
-    const id = setInterval(() => setIndex((i) => (i + 1) % phrases.length), 2200);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, tool]);
-  return phrases[index];
-}
-
 function StepIcon({ status }: { status: ChainStep['status'] }) {
   switch (status) {
     case 'Completed':
-      return <CheckCircle2 className="w-5 h-5 text-green-500" />;
+      return <CheckCircle2 className="w-5 h-5 text-emerald-400" />;
     case 'Failed':
-      return <XCircle className="w-5 h-5 text-red-500" />;
+      return <XCircle className="w-5 h-5 text-red-400" />;
     case 'Cancelled':
-      return <Ban className="w-5 h-5 text-gray-400" />;
+      return <Ban className="w-5 h-5 text-gray-500" />;
     case 'Running':
-      return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
+      return <Radar className="w-5 h-5 text-cyan-400 animate-radar-sweep" />;
     default:
-      return <Circle className="w-5 h-5 text-gray-300 dark:text-gray-600" />;
+      return <Circle className="w-5 h-5 text-gray-600" />;
   }
 }
 
 interface ScanChainProgressProps {
   steps: ChainStep[];
+  latestPhase: string | null;
+  findingCounts: Record<string, number>;
 }
 
-export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps }) => {
+export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps, latestPhase, findingCounts }) => {
   const activeStep = steps.find((s) => s.status === 'Running');
   const isActiveRunning = !!activeStep;
   const spinner = useSpinnerFrame(isActiveRunning);
-  const phrase = useCyclingPhrase(activeStep?.tool ?? '', isActiveRunning);
 
   if (steps.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-3">
+    <div className="rounded-lg border border-blue-500/20 bg-slate-900 p-4 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
-        {steps.map((step, i) => (
-          <div key={step.publicId} className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <StepIcon status={step.status} />
-              <span
-                className={`text-sm font-medium ${
-                  step.status === 'Running' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
-                }`}
-              >
-                {step.tool}
-              </span>
+        {steps.map((step, i) => {
+          const found = findingCounts[step.publicId] ?? 0;
+          return (
+            <div key={step.publicId} className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <StepIcon status={step.status} />
+                <span
+                  className={`text-sm font-medium font-mono ${
+                    step.status === 'Running' ? 'text-cyan-400' : 'text-gray-300'
+                  }`}
+                >
+                  {step.tool}
+                </span>
+                {found > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-xs font-mono bg-amber-500/10 text-amber-400">
+                    {found} found
+                  </span>
+                )}
+              </div>
+              {i < steps.length - 1 && <ArrowRight className="w-3.5 h-3.5 text-gray-600" />}
             </div>
-            {i < steps.length - 1 && <ArrowRight className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600" />}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {isActiveRunning && (
-        <p className="text-sm font-mono text-blue-600 dark:text-blue-400">
-          <span className="inline-block w-4">{spinner}</span> {phrase}
+      {isActiveRunning && latestPhase && (
+        <p className="text-sm font-mono text-cyan-400">
+          <span className="inline-block w-4">{spinner}</span> {latestPhase}
         </p>
       )}
     </div>

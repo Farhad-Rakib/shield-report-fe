@@ -8,12 +8,32 @@ import { Scan, ScanStatus, ScanTool } from '../../domain/models/scan.model';
 interface ScanOutputEvent {
   scanPublicId: string;
   line: string;
+  stream: 'stdout' | 'stderr';
+}
+
+interface ScanPhaseEvent {
+  scanPublicId: string;
+  message: string;
+}
+
+interface ScanFindingEvent {
+  scanPublicId: string;
+  title: string;
+  severity: string | null;
+  endpoint: string;
 }
 
 interface ScanStatusEvent {
   scanPublicId: string;
   status: string;
 }
+
+// One typed entry per console line — lets ScanConsolePane render backend-narrated progress,
+// raw tool output, and live parsed findings with distinct treatment instead of one flat text feed.
+export type ConsoleEntry =
+  | { kind: 'raw'; text: string; stream: 'stdout' | 'stderr' }
+  | { kind: 'status'; text: string }
+  | { kind: 'finding'; title: string; severity: string | null; endpoint: string };
 
 export interface ChainStep {
   id: number;
@@ -46,8 +66,13 @@ function getHubBaseUrl(): string {
 export function useScanChainConsole(rootScan: Scan | null | undefined) {
   const [steps, setSteps] = useState<ChainStep[]>([]);
   const [activePublicId, setActivePublicId] = useState<string | null>(null);
-  const [lines, setLines] = useState<string[]>([]);
+  const [entries, setEntries] = useState<ConsoleEntry[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  // Per-step live finding counts, keyed by the step's publicId — findings arrive scoped to
+  // whichever scan is currently the SignalR-joined "active" one, so the handler below can
+  // attribute each one directly without parsing entry text.
+  const [findingCounts, setFindingCounts] = useState<Record<string, number>>({});
+  const [latestPhase, setLatestPhase] = useState<string | null>(null);
   const rootPublicIdRef = useRef<string | null>(null);
 
   // (Re)initialize only when a *different* root scan loads — React Query refetches the same
@@ -57,7 +82,9 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
     rootPublicIdRef.current = rootScan.publicId;
 
     let cancelled = false;
-    setLines([]);
+    setEntries([]);
+    setFindingCounts({});
+    setLatestPhase(null);
     setSteps([{ id: rootScan.id, publicId: rootScan.publicId, tool: rootScan.tool, status: rootScan.status }]);
     setActivePublicId(rootScan.publicId);
 
@@ -68,14 +95,19 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       // page once Naabu and Nuclei are both done), joining the root scan's SignalR group would
       // wait forever: it's terminal, so no more events will ever arrive for it, and nothing
       // would trigger the handoff to the next step. So skip forward to the first non-terminal
-      // step, concatenating each skipped step's persisted rawOutput into the initial lines.
+      // step, concatenating each skipped step's persisted rawOutput into the initial entries.
       const resolved: ChainStep[] = [{ id: rootScan.id, publicId: rootScan.publicId, tool: rootScan.tool, status: rootScan.status }];
-      const seededLines: string[] = [];
+      const seeded: ConsoleEntry[] = [];
       let startPublicId = rootScan.publicId;
       let foundStart = !TERMINAL_STATUSES.includes(rootScan.status);
 
       if (!foundStart && rootScan.rawOutput) {
-        seededLines.push(...rootScan.rawOutput.split('\n').filter((line) => line.length > 0));
+        seeded.push(
+          ...rootScan.rawOutput
+            .split('\n')
+            .filter((line) => line.length > 0)
+            .map((text): ConsoleEntry => ({ kind: 'raw', text, stream: 'stdout' }))
+        );
       }
 
       let cursor = rootScan.nextScanPublicId;
@@ -89,7 +121,10 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
           if (!foundStart) {
             if (TERMINAL_STATUSES.includes(next.status)) {
               if (next.rawOutput) {
-                seededLines.push('', `--- ${next.tool} ${next.status.toLowerCase()} ---`, '', ...next.rawOutput.split('\n').filter((line) => line.length > 0));
+                seeded.push(
+                  { kind: 'status', text: `${next.tool} ${next.status.toLowerCase()}` },
+                  ...next.rawOutput.split('\n').filter((line) => line.length > 0).map((text): ConsoleEntry => ({ kind: 'raw', text, stream: 'stdout' }))
+                );
               }
             } else {
               startPublicId = next.publicId;
@@ -107,7 +142,7 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       if (cancelled) return;
 
       setSteps(resolved);
-      setLines(seededLines);
+      setEntries(seeded);
       // foundStart stays false only when every step in the chain is already terminal — in that
       // case fall through to the last step so the console at least shows its final output.
       setActivePublicId(foundStart ? startPublicId : resolved[resolved.length - 1].publicId);
@@ -121,9 +156,10 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
   useEffect(() => {
     if (!activePublicId) return;
 
-    // See useScanConsoleHub for why `cancelled` exists — StrictMode double-invokes this effect
-    // in dev, and a stale connection's async chain must no-op instead of clobbering state set by
-    // the current one.
+    // StrictMode double-invokes this effect in dev (mount -> cleanup -> mount), which races the
+    // cleanup's connection.stop() against the first mount's in-flight start() and surfaces as
+    // "The connection was stopped during negotiation." `cancelled` lets the stale connection's
+    // promise chain no-op instead of clobbering state set by the current one.
     let cancelled = false;
     setConnectionError(null);
 
@@ -136,7 +172,21 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
 
     connection.on('ScanOutput', (event: ScanOutputEvent) => {
       if (!cancelled && event.scanPublicId === activePublicId) {
-        setLines((prev) => [...prev, event.line]);
+        setEntries((prev) => [...prev, { kind: 'raw', text: event.line, stream: event.stream }]);
+      }
+    });
+
+    connection.on('ScanPhase', (event: ScanPhaseEvent) => {
+      if (!cancelled && event.scanPublicId === activePublicId) {
+        setEntries((prev) => [...prev, { kind: 'status', text: event.message }]);
+        setLatestPhase(event.message);
+      }
+    });
+
+    connection.on('ScanFinding', (event: ScanFindingEvent) => {
+      if (!cancelled && event.scanPublicId === activePublicId) {
+        setEntries((prev) => [...prev, { kind: 'finding', title: event.title, severity: event.severity, endpoint: event.endpoint }]);
+        setFindingCounts((prev) => ({ ...prev, [activePublicId]: (prev[activePublicId] ?? 0) + 1 }));
       }
     });
 
@@ -152,7 +202,9 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
         const idx = prev.findIndex((s) => s.publicId === activePublicId);
         const next = idx >= 0 ? prev[idx + 1] : undefined;
         if (next) {
-          setLines((lines) => [...lines, '', `--- ${prev[idx].tool} ${status.toLowerCase()}, starting ${next.tool} ---`, '']);
+          const message = `${prev[idx].tool} ${status.toLowerCase()}, starting ${next.tool}`;
+          setEntries((entries) => [...entries, { kind: 'status', text: message }]);
+          setLatestPhase(message);
           setActivePublicId(next.publicId);
         }
         return prev;
@@ -175,5 +227,5 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
     };
   }, [activePublicId]);
 
-  return { lines, steps, activePublicId, connectionError };
+  return { entries, steps, activePublicId, connectionError, findingCounts, latestPhase };
 }

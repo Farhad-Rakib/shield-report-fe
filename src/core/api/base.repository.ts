@@ -123,7 +123,7 @@ export class BaseRepository implements IBaseRepository {
     }
 
     // Keep the in-memory auth store in sync with the refreshed token. SignalR's
-    // accessTokenFactory (useScanConsoleHub) reads useAuthStore.getState().accessToken
+    // accessTokenFactory (useScanChainConsole) reads useAuthStore.getState().accessToken
     // directly rather than localStorage — without this, a silent REST refresh leaves
     // the store holding the stale, expired token, so every subsequent scan-console
     // (re)connect sends dead credentials and the hub rejects it as Unauthorized.
