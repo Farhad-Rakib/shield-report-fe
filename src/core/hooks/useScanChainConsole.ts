@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { AppConfig } from '../config/app.config';
 import { useAuthStore } from '../../features/auth/store/auth.store';
 import { scanApi } from '../api/services/scan.api';
-import { Scan, ScanStatus, ScanTool } from '../../domain/models/scan.model';
+import { Scan, ScanStatus } from '../../domain/models/scan.model';
+import { ChainStep, ConsoleEntry, useScanConsoleStore } from '../stores/scan-console.store';
+
+export type { ChainStep, ConsoleEntry, ScanProgress } from '../stores/scan-console.store';
 
 interface ScanOutputEvent {
   scanPublicId: string;
@@ -37,28 +40,6 @@ interface ScanProgressEvent {
   total: number | null;
 }
 
-export interface ScanProgress {
-  percent: number;
-  requests: number | null;
-  rps: number | null;
-  matched: number | null;
-  total: number | null;
-}
-
-// One typed entry per console line — lets ScanConsolePane render backend-narrated progress,
-// raw tool output, and live parsed findings with distinct treatment instead of one flat text feed.
-export type ConsoleEntry =
-  | { kind: 'raw'; text: string; stream: 'stdout' | 'stderr' }
-  | { kind: 'status'; text: string }
-  | { kind: 'finding'; title: string; severity: string | null; endpoint: string };
-
-export interface ChainStep {
-  id: number;
-  publicId: string;
-  tool: ScanTool;
-  status: ScanStatus;
-}
-
 const TERMINAL_STATUSES: ScanStatus[] = ['Completed', 'Failed', 'Cancelled'];
 // Matches Scan's declared chain length (Naabu -> Nuclei -> Reconftw) with headroom — just a
 // sanity cap so a data bug (e.g. an accidental cycle) can't spin this into an infinite walk.
@@ -77,38 +58,28 @@ function getHubBaseUrl(): string {
 // hits a terminal state, so the console reads as one continuous sequential run instead of
 // requiring the user to navigate to each tool's scan page by hand.
 //
+// All accumulated state (console entries, live findings, progress, chain steps) lives in
+// useScanConsoleStore keyed by the root scan's publicId, not local component state — navigating
+// away from the scan detail page and back would otherwise unmount this hook and lose everything
+// gathered so far even though the scan itself is still running server-side.
+//
 // Only reflects forward progress from whichever scan the page loaded on; it doesn't reconstruct
 // earlier steps if you land mid-chain (e.g. a bookmarked Nuclei URL after Naabu already
 // finished) since Scan has no "previous" pointer, only "next".
 export function useScanChainConsole(rootScan: Scan | null | undefined) {
-  const [steps, setSteps] = useState<ChainStep[]>([]);
-  const [activePublicId, setActivePublicId] = useState<string | null>(null);
-  const [entries, setEntries] = useState<ConsoleEntry[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  // Per-step live finding counts, keyed by the step's publicId — findings arrive scoped to
-  // whichever scan is currently the SignalR-joined "active" one, so the handler below can
-  // attribute each one directly without parsing entry text.
-  const [findingCounts, setFindingCounts] = useState<Record<string, number>>({});
-  const [latestPhase, setLatestPhase] = useState<string | null>(null);
-  // Null means "no completion percentage reported for the current step" (Naabu/Reconftw don't
-  // report one, and Nuclei hasn't sent its first -stats line yet) — the console falls back to
-  // an indeterminate bar in that case rather than showing a stale or fabricated number.
-  const [progress, setProgress] = useState<ScanProgress | null>(null);
-  const rootPublicIdRef = useRef<string | null>(null);
+  const initSession = useScanConsoleStore((s) => s.initSession);
+  const updateSession = useScanConsoleStore((s) => s.updateSession);
+  const session = useScanConsoleStore((s) => (rootScan ? s.sessions[rootScan.publicId] : undefined));
 
-  // (Re)initialize only when a *different* root scan loads — React Query refetches the same
-  // scan on window focus etc., and that shouldn't reset an in-progress chain walk to step 1.
+  // Resolve the chain and seed the store session — but only the first time this scan is ever
+  // opened in this browser session. If a session already exists (e.g. the user navigated away
+  // mid-scan and came back), resume from it instead of re-walking and clobbering live progress.
   useEffect(() => {
-    if (!rootScan || rootScan.publicId === rootPublicIdRef.current) return;
-    rootPublicIdRef.current = rootScan.publicId;
+    if (!rootScan) return;
+    if (useScanConsoleStore.getState().sessions[rootScan.publicId]) return;
 
     let cancelled = false;
-    setEntries([]);
-    setFindingCounts({});
-    setLatestPhase(null);
-    setProgress(null);
-    setSteps([{ id: rootScan.id, publicId: rootScan.publicId, tool: rootScan.tool, status: rootScan.status }]);
-    setActivePublicId(rootScan.publicId);
 
     (async () => {
       // Walk the whole chain up front so the progress strip can show every tool immediately —
@@ -163,20 +134,28 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
 
       if (cancelled) return;
 
-      setSteps(resolved);
-      setEntries(seeded);
-      // foundStart stays false only when every step in the chain is already terminal — in that
-      // case fall through to the last step so the console at least shows its final output.
-      setActivePublicId(foundStart ? startPublicId : resolved[resolved.length - 1].publicId);
+      initSession(rootScan.publicId, {
+        steps: resolved,
+        entries: seeded,
+        // foundStart stays false only when every step in the chain is already terminal — in
+        // that case fall through to the last step so the console at least shows its final output.
+        activePublicId: foundStart ? startPublicId : resolved[resolved.length - 1].publicId,
+        findingCounts: {},
+        latestPhase: null,
+        progress: null,
+      });
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [rootScan]);
+  }, [rootScan, initSession]);
+
+  const rootPublicId = rootScan?.publicId;
+  const activePublicId = session?.activePublicId ?? null;
 
   useEffect(() => {
-    if (!activePublicId) return;
+    if (!activePublicId || !rootPublicId) return;
 
     // StrictMode double-invokes this effect in dev (mount -> cleanup -> mount), which races the
     // cleanup's connection.stop() against the first mount's in-flight start() and surfaces as
@@ -184,8 +163,6 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
     // promise chain no-op instead of clobbering state set by the current one.
     let cancelled = false;
     setConnectionError(null);
-    // A new step starting shouldn't keep showing the previous tool's last-known percent.
-    setProgress(null);
 
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(`${getHubBaseUrl()}/hubs/notifications`, {
@@ -195,49 +172,65 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       .build();
 
     connection.on('ScanOutput', (event: ScanOutputEvent) => {
-      if (!cancelled && event.scanPublicId === activePublicId) {
-        setEntries((prev) => [...prev, { kind: 'raw', text: event.line, stream: event.stream }]);
-      }
+      if (cancelled || event.scanPublicId !== activePublicId) return;
+      updateSession(rootPublicId, (prev) => ({
+        ...prev,
+        entries: [...prev.entries, { kind: 'raw', text: event.line, stream: event.stream }],
+      }));
     });
 
     connection.on('ScanPhase', (event: ScanPhaseEvent) => {
-      if (!cancelled && event.scanPublicId === activePublicId) {
-        setEntries((prev) => [...prev, { kind: 'status', text: event.message }]);
-        setLatestPhase(event.message);
-      }
+      if (cancelled || event.scanPublicId !== activePublicId) return;
+      updateSession(rootPublicId, (prev) => ({
+        ...prev,
+        entries: [...prev.entries, { kind: 'status', text: event.message }],
+        latestPhase: event.message,
+      }));
     });
 
     connection.on('ScanFinding', (event: ScanFindingEvent) => {
-      if (!cancelled && event.scanPublicId === activePublicId) {
-        setEntries((prev) => [...prev, { kind: 'finding', title: event.title, severity: event.severity, endpoint: event.endpoint }]);
-        setFindingCounts((prev) => ({ ...prev, [activePublicId]: (prev[activePublicId] ?? 0) + 1 }));
-      }
+      if (cancelled || event.scanPublicId !== activePublicId) return;
+      updateSession(rootPublicId, (prev) => ({
+        ...prev,
+        entries: [...prev.entries, { kind: 'finding', title: event.title, severity: event.severity, endpoint: event.endpoint }],
+        findingCounts: { ...prev.findingCounts, [activePublicId]: (prev.findingCounts[activePublicId] ?? 0) + 1 },
+      }));
     });
 
     connection.on('ScanProgress', (event: ScanProgressEvent) => {
-      if (!cancelled && event.scanPublicId === activePublicId) {
-        setProgress({ percent: event.percent, requests: event.requests, rps: event.rps, matched: event.matched, total: event.total });
-      }
+      if (cancelled || event.scanPublicId !== activePublicId) return;
+      updateSession(rootPublicId, (prev) => ({
+        ...prev,
+        progress: { percent: event.percent, requests: event.requests, rps: event.rps, matched: event.matched, total: event.total },
+      }));
     });
 
     connection.on('ScanStatusChanged', (event: ScanStatusEvent) => {
       if (cancelled || event.scanPublicId !== activePublicId) return;
-
       const status = event.status as ScanStatus;
-      setSteps((prev) => prev.map((s) => (s.publicId === activePublicId ? { ...s, status } : s)));
 
-      if (!TERMINAL_STATUSES.includes(status)) return;
-
-      setSteps((prev) => {
-        const idx = prev.findIndex((s) => s.publicId === activePublicId);
-        const next = idx >= 0 ? prev[idx + 1] : undefined;
-        if (next) {
-          const message = `${prev[idx].tool} ${status.toLowerCase()}, starting ${next.tool}`;
-          setEntries((entries) => [...entries, { kind: 'status', text: message }]);
-          setLatestPhase(message);
-          setActivePublicId(next.publicId);
+      updateSession(rootPublicId, (prev) => {
+        const steps = prev.steps.map((s) => (s.publicId === activePublicId ? { ...s, status } : s));
+        if (!TERMINAL_STATUSES.includes(status)) {
+          return { ...prev, steps };
         }
-        return prev;
+
+        const idx = steps.findIndex((s) => s.publicId === activePublicId);
+        const next = idx >= 0 ? steps[idx + 1] : undefined;
+        if (!next) {
+          return { ...prev, steps };
+        }
+
+        // A new step is starting, so the last-known percent no longer applies to it.
+        const message = `${steps[idx].tool} ${status.toLowerCase()}, starting ${next.tool}`;
+        return {
+          ...prev,
+          steps,
+          entries: [...prev.entries, { kind: 'status', text: message }],
+          latestPhase: message,
+          activePublicId: next.publicId,
+          progress: null,
+        };
       });
     });
 
@@ -255,7 +248,15 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       connection.invoke('LeaveScanGroup', activePublicId).catch(() => undefined);
       connection.stop();
     };
-  }, [activePublicId]);
+  }, [activePublicId, rootPublicId, updateSession]);
 
-  return { entries, steps, activePublicId, connectionError, findingCounts, latestPhase, progress };
+  return {
+    entries: session?.entries ?? [],
+    steps: session?.steps ?? [],
+    activePublicId,
+    connectionError,
+    findingCounts: session?.findingCounts ?? {},
+    latestPhase: session?.latestPhase ?? null,
+    progress: session?.progress ?? null,
+  };
 }

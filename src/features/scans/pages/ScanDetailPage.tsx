@@ -1,16 +1,20 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, AlertTriangle } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { ArrowLeft, AlertTriangle, Square } from 'lucide-react';
 import { ScanConsolePane } from '../../../components/scan/ScanConsolePane';
 import { ScanChainProgress } from '../../../components/scan/ScanChainProgress';
 import { FindingsPanel } from '../../../components/scan/FindingsPanel';
 import { ScanStatusBadge, SeverityBadge } from '../../../components/badges/PentestBadges';
 import { Loader } from '../../../components/ui/Loader/Loader';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
+import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
+import { toast } from '../../../components/ui/Toast/toast.store';
 import { useScanChainConsole } from '../../../core/hooks/useScanChainConsole';
 import { scanApi } from '../../../core/api/services/scan.api';
 import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
+import { useAuthStore } from '../../auth/store/auth.store';
+import { Permissions } from '../../../core/constants/permissions';
 import { ScanStatus } from '../../../domain/models/scan.model';
 
 const TERMINAL_STATUSES: ScanStatus[] = ['Completed', 'Failed', 'Cancelled'];
@@ -18,6 +22,8 @@ const TERMINAL_STATUSES: ScanStatus[] = ['Completed', 'Failed', 'Cancelled'];
 export const ScanDetailPage: React.FC = () => {
   const { publicId } = useParams<{ publicId: string }>();
   const queryClient = useQueryClient();
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const [confirmStopOpen, setConfirmStopOpen] = useState(false);
 
   const { data: scan, isLoading, error, refetch } = useQuery({
     queryKey: ['scan', publicId],
@@ -25,7 +31,7 @@ export const ScanDetailPage: React.FC = () => {
     enabled: !!publicId,
   });
 
-  const { entries, steps, connectionError, latestPhase, findingCounts, progress } = useScanChainConsole(scan);
+  const { entries, steps, connectionError, latestPhase, findingCounts, progress, activePublicId } = useScanChainConsole(scan);
   const liveFindings = entries.filter((e): e is Extract<typeof entries[number], { kind: 'finding' }> => e.kind === 'finding');
 
   // The whole chain is done once its last known step reaches a terminal state — individual
@@ -46,6 +52,17 @@ export const ScanDetailPage: React.FC = () => {
     }
   }, [chainComplete, publicId, queryClient]);
 
+  // Cancelling the currently active step also cascades to cancel the rest of the still-queued
+  // chain server-side (ScanService.CancelAsync), so this is a genuine "stop the whole scan".
+  const stopMutation = useMutation({
+    mutationFn: () => scanApi.cancelScan(activePublicId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scan', publicId] });
+      toast.success('Scan stopped');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to stop scan'),
+  });
+
   // Vulnerabilities are tied to whichever tool's Scan actually created them, not necessarily
   // the root scan the URL points at — fan out across every step in the resolved chain and merge.
   const { data: vulnResults } = useQuery({
@@ -58,6 +75,8 @@ export const ScanDetailPage: React.FC = () => {
   if (isLoading) return <Loader />;
   if (error || !scan) return <ErrorState message={error?.message || 'Scan not found'} retry={() => refetch()} />;
 
+  const canStop = !!activePublicId && !chainComplete && hasPermission(Permissions.ScansCancel);
+
   return (
     <div className="space-y-6">
       <div>
@@ -69,6 +88,15 @@ export const ScanDetailPage: React.FC = () => {
             {steps.length > 1 ? 'Scan Chain' : `${scan.tool} Scan`}
           </h1>
           {overallStatus && <ScanStatusBadge status={overallStatus} />}
+          {canStop && (
+            <button
+              onClick={() => setConfirmStopOpen(true)}
+              disabled={stopMutation.isPending}
+              className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-400 border border-red-500/30 rounded-md hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+            >
+              <Square className="w-3.5 h-3.5" /> Stop Scan
+            </button>
+          )}
         </div>
         <p className="text-gray-600 dark:text-gray-400 mt-1">{scan.clientAssetName}</p>
       </div>
@@ -81,17 +109,25 @@ export const ScanDetailPage: React.FC = () => {
 
       <ScanChainProgress steps={steps} latestPhase={latestPhase} findingCounts={findingCounts} progress={progress} />
 
-      {liveFindings.length > 0 && (
-        <div>
-          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Findings ({liveFindings.length})</h2>
-          <FindingsPanel findings={liveFindings} />
-        </div>
-      )}
+      <div>
+        <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Findings ({liveFindings.length})</h2>
+        <FindingsPanel findings={liveFindings} />
+      </div>
 
       <div>
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>
         <ScanConsolePane entries={entries} activeTool={runningStep?.tool} live={!!runningStep} />
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmStopOpen}
+        onClose={() => setConfirmStopOpen(false)}
+        onConfirm={() => stopMutation.mutate()}
+        title="Stop this scan?"
+        message="This cancels the currently running tool and the rest of the chain. Findings already recorded are kept."
+        confirmText="Stop Scan"
+        variant="danger"
+      />
 
       {chainComplete && (
         <div>

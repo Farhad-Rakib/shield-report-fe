@@ -1,4 +1,4 @@
-import { AlertTriangle, Info, ShieldAlert } from 'lucide-react';
+import { Info, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { ConsoleEntry } from '../../core/hooks/useScanChainConsole';
 
 type FindingEntry = Extract<ConsoleEntry, { kind: 'finding' }>;
@@ -8,40 +8,74 @@ interface FindingsPanelProps {
 }
 
 const SEVERE = new Set(['critical', 'high']);
+const WARNING = new Set(['medium']);
 
-function severityStyle(severity: string | null): { border: string; icon: React.ReactNode; label: string } {
+type Bucket = 'informational' | 'warning' | 'severe';
+
+function bucketOf(severity: string | null): Bucket {
   const normalized = (severity || '').toLowerCase();
-  if (SEVERE.has(normalized)) {
-    return { border: 'border-t-red-500', icon: <ShieldAlert className="w-3.5 h-3.5 text-red-500" />, label: severity || 'High' };
-  }
-  if (normalized === 'medium') {
-    return { border: 'border-t-amber-500', icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />, label: severity || 'Medium' };
-  }
-  return { border: 'border-t-emerald-500', icon: <Info className="w-3.5 h-3.5 text-emerald-500" />, label: severity || 'Info' };
+  if (SEVERE.has(normalized)) return 'severe';
+  if (WARNING.has(normalized)) return 'warning';
+  return 'informational';
 }
 
-// Live results feed, parsed straight from the streaming console — appears above the terminal so
-// "what we found" reads at a glance without scrolling raw output. Informational findings get a
-// green top border, severe (critical/high) ones red, medium amber — new cards animate in as
-// ScanFinding events arrive so the panel visibly grows during a run.
+const BOX_CONFIG: Record<Bucket, { label: string; icon: React.ReactNode; border: string; header: string; badge: string }> = {
+  informational: {
+    label: 'Informational',
+    icon: <Info className="w-4 h-4 text-emerald-400" />,
+    border: 'border-emerald-500/30',
+    header: 'bg-emerald-500/10 text-emerald-400',
+    badge: 'bg-emerald-500/20 text-emerald-400',
+  },
+  warning: {
+    label: 'Warning',
+    icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
+    border: 'border-amber-500/30',
+    header: 'bg-amber-500/10 text-amber-400',
+    badge: 'bg-amber-500/20 text-amber-400',
+  },
+  severe: {
+    label: 'Severe',
+    icon: <ShieldAlert className="w-4 h-4 text-red-400" />,
+    border: 'border-red-500/30',
+    header: 'bg-red-500/10 text-red-400',
+    badge: 'bg-red-500/20 text-red-400',
+  },
+};
+
+// Three fixed severity boxes — findings are sorted into whichever one matches as ScanFinding
+// events arrive, rather than rendering one card per finding. Always renders all three so the
+// layout doesn't jump around as the first finding of a given severity shows up mid-scan.
 export const FindingsPanel: React.FC<FindingsPanelProps> = ({ findings }) => {
-  if (findings.length === 0) return null;
+  const buckets: Record<Bucket, FindingEntry[]> = { informational: [], warning: [], severe: [] };
+  for (const finding of findings) {
+    buckets[bucketOf(finding.severity)].push(finding);
+  }
 
   return (
-    <div className="flex flex-wrap gap-3">
-      {findings.map((finding, i) => {
-        const style = severityStyle(finding.severity);
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {(Object.keys(BOX_CONFIG) as Bucket[]).map((bucket) => {
+        const config = BOX_CONFIG[bucket];
+        const items = buckets[bucket];
         return (
-          <div
-            key={i}
-            className={`animate-fade-in-up flex-1 min-w-[240px] max-w-sm rounded-md border-t-4 ${style.border} border-x border-b border-slate-800 bg-slate-900 px-3 py-2.5 shadow-lg`}
-          >
-            <div className="flex items-center gap-1.5 mb-1">
-              {style.icon}
-              <span className="text-xs font-mono uppercase tracking-wide text-gray-400">{style.label}</span>
+          <div key={bucket} className={`rounded-lg border ${config.border} bg-slate-900 overflow-hidden flex flex-col`}>
+            <div className={`flex items-center gap-1.5 px-3 py-2 ${config.header}`}>
+              {config.icon}
+              <span className="text-xs font-mono uppercase tracking-wide font-medium">{config.label}</span>
+              <span className={`ml-auto px-1.5 py-0.5 rounded-full text-xs font-mono ${config.badge}`}>{items.length}</span>
             </div>
-            <p className="text-sm font-medium text-gray-100 leading-snug">{finding.title}</p>
-            <p className="text-xs font-mono text-gray-500 mt-1 truncate">{finding.endpoint}</p>
+            <div className="p-2 space-y-1.5 max-h-64 overflow-y-auto">
+              {items.length === 0 ? (
+                <p className="text-xs text-gray-600 px-1 py-2">No findings yet</p>
+              ) : (
+                items.map((finding, i) => (
+                  <div key={i} className="animate-fade-in-up rounded border border-slate-800 bg-slate-950/60 px-2 py-1.5">
+                    <p className="text-xs font-medium text-gray-200 leading-snug">{finding.title}</p>
+                    <p className="text-[11px] font-mono text-gray-500 mt-0.5 truncate">{finding.endpoint}</p>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         );
       })}
