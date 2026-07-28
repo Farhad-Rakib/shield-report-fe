@@ -45,11 +45,20 @@ function decodeJwtPayload(token: string): TokenPayload | null {
 // permission claim is empty. The backend bypasses via PermissionAuthorizationHandler's own role
 // check; mirror that here, or every hasPermission(...)-gated control in the app silently hides
 // itself for the one account that's actually allowed to do everything.
+//
+// A user with more than one role (e.g. SuperAdmin also assigned PENTESTER for test data) gets
+// the role claim serialized as an ARRAY, not a single string — a strict `=== 'SuperAdmin'` check
+// silently breaks for that shape, hiding every gated control instead of granting everything.
+function hasRole(roleClaim: unknown, role: string): boolean {
+  if (Array.isArray(roleClaim)) return roleClaim.includes(role);
+  return roleClaim === role;
+}
+
 function isSuperAdmin(tokenPayload: TokenPayload | null): boolean {
   if (!tokenPayload) return false;
   return (
-    tokenPayload.role === 'SuperAdmin' ||
-    tokenPayload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] === 'SuperAdmin'
+    hasRole(tokenPayload.role, 'SuperAdmin') ||
+    hasRole(tokenPayload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'], 'SuperAdmin')
   );
 }
 

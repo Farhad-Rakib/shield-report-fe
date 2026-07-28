@@ -50,4 +50,20 @@ export const Permissions = {
   RegistrationInvitesRead: 'registration-invites.read',
   RegistrationInvitesCreate: 'registration-invites.create',
   RegistrationInvitesRevoke: 'registration-invites.revoke',
+
+  // LLM Provider Configuration
+  LlmProviderConfigurationsRead: 'llm-provider-configurations.read',
+  LlmProviderConfigurationsCreate: 'llm-provider-configurations.create',
+  LlmProviderConfigurationsUpdate: 'llm-provider-configurations.update',
+  LlmProviderConfigurationsDelete: 'llm-provider-configurations.delete',
+
+  // Vulnerability Reports (White Box Testing PDF generator)
+  VulnerabilityReportsRead: 'vulnerability-reports.read',
+  VulnerabilityReportsGenerate: 'vulnerability-reports.generate',
+  VulnerabilityReportsApprove: 'vulnerability-reports.approve',
+  VulnerabilityReportsDownload: 'vulnerability-reports.download',
+  ReportTemplatesRead: 'report-templates.read',
+  ReportTemplatesCreate: 'report-templates.create',
+  ReportTemplatesUpdate: 'report-templates.update',
+  ReportTemplatesDelete: 'report-templates.delete',
 } as const;

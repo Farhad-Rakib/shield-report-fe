@@ -44,7 +44,9 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
       if (!field.validation) {
         switch (field.type) {
           case 'email':
-            fieldSchema = z.string().email('Invalid email address');
+            fieldSchema = field.required
+              ? z.string().email('Invalid email address')
+              : z.string().email('Invalid email address').or(z.literal(''));
             break;
           case 'number':
             fieldSchema = z.number();

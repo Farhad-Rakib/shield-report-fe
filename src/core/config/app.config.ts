@@ -29,6 +29,10 @@ export const AppConfig = {
     loginPath: '/login',
     defaultRedirect: '/dashboard',
     sessionTimeout: 60 * 60 * 1000,
+    // Routes that work without a session — a 401 encountered here (e.g. AuthLayout's
+    // pre-login SiteSettings fetch) must never trigger BaseRepository's hard redirect,
+    // or the page a visitor is actually trying to use gets yanked out from under them.
+    publicPaths: ['/login', '/register'],
   },
 
   theme: {

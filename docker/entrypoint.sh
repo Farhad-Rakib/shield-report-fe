@@ -6,9 +6,11 @@ set -eu
 
 : "${API_BASE_URL:=http://localhost:5000/api/v1}"
 : "${CSP_CONNECT_SRC:=}"
+: "${CSP_ONLYOFFICE_SRC:=}"
 
 envsubst '${API_BASE_URL}' \
   < /usr/share/nginx/html/runtime-config.template.js \
   > /usr/share/nginx/html/runtime-config.js
 
 sed -i "s#__CSP_CONNECT_SRC__#${CSP_CONNECT_SRC}#" /usr/share/nginx/html/index.html
+sed -i "s#__CSP_ONLYOFFICE_SRC__#${CSP_ONLYOFFICE_SRC}#g" /usr/share/nginx/html/index.html

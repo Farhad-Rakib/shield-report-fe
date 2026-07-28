@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, Radar, Circle, Ban, ArrowRight } from 'lucide-react';
 import { ChainStep, ScanProgress } from '../../core/hooks/useScanChainConsole';
 import { ScanProgressBar } from './ScanProgressBar';
+import { getScanToolLabel } from '../../domain/models/scan.model';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -58,7 +59,7 @@ export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps, lat
                     step.status === 'Running' ? 'text-cyan-400' : 'text-gray-300'
                   }`}
                 >
-                  {step.tool}
+                  {getScanToolLabel(step.tool)}
                 </span>
                 {found > 0 && (
                   <span className="px-1.5 py-0.5 rounded-full text-xs font-mono bg-amber-500/10 text-amber-400">

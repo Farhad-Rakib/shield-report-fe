@@ -3,7 +3,7 @@ import * as signalR from '@microsoft/signalr';
 import { AppConfig } from '../config/app.config';
 import { useAuthStore } from '../../features/auth/store/auth.store';
 import { scanApi } from '../api/services/scan.api';
-import { Scan, ScanStatus } from '../../domain/models/scan.model';
+import { Scan, ScanStatus, getScanToolLabel } from '../../domain/models/scan.model';
 import { ChainStep, ConsoleEntry, useScanConsoleStore } from '../stores/scan-console.store';
 
 export type { ChainStep, ConsoleEntry, ScanProgress } from '../stores/scan-console.store';
@@ -115,7 +115,7 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
             if (TERMINAL_STATUSES.includes(next.status)) {
               if (next.rawOutput) {
                 seeded.push(
-                  { kind: 'status', text: `${next.tool} ${next.status.toLowerCase()}` },
+                  { kind: 'status', text: `${getScanToolLabel(next.tool)} ${next.status.toLowerCase()}` },
                   ...next.rawOutput.split('\n').filter((line) => line.length > 0).map((text): ConsoleEntry => ({ kind: 'raw', text, stream: 'stdout' }))
                 );
               }
@@ -222,7 +222,7 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
         }
 
         // A new step is starting, so the last-known percent no longer applies to it.
-        const message = `${steps[idx].tool} ${status.toLowerCase()}, starting ${next.tool}`;
+        const message = `${getScanToolLabel(steps[idx].tool)} ${status.toLowerCase()}, starting ${getScanToolLabel(next.tool)}`;
         return {
           ...prev,
           steps,

@@ -1,8 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { Home, ArrowLeft } from 'lucide-react';
+import { useAuthStore } from '../../features/auth/store/auth.store';
+import { isClientPortalUser } from '../../core/guards/portal.guard';
 
 export const NotFoundPage: React.FC = () => {
   const navigate = useNavigate();
+  const tokenPayload = useAuthStore((s) => s.tokenPayload);
+  const homePath = isClientPortalUser(tokenPayload) ? '/portal' : '/dashboard';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
@@ -27,7 +31,7 @@ export const NotFoundPage: React.FC = () => {
             Go Back
           </button>
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate(homePath)}
             className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Home className="w-4 h-4" />

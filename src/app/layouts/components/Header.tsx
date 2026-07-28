@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-import { Menu, LogOut, User, Sun, Moon, Bell, Check, Trash2 } from 'lucide-react';
+import { Menu, LogOut, User, Sun, Moon } from 'lucide-react';
+// Bell, Check, Trash2 — only used by the notification bell, commented out below.
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../../features/auth/store/auth.store';
 import { useThemeStore } from '../../../core/stores/theme.store';
-import { useNotificationStore, Notification } from '../../../core/stores/notification.store';
+// import { useNotificationStore, Notification } from '../../../core/stores/notification.store';
 import { userApi } from '../../../core/api/services/user.api';
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
+// Notification bell — commented out for now (see the render block further down for why).
+/*
 const formatTimeAgo = (ts: string) => {
   const diff = Date.now() - new Date(ts).getTime();
   const mins = Math.floor(diff / 60000);
@@ -55,15 +58,16 @@ const NotificationItem: React.FC<{
     </button>
   </div>
 );
+*/
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const { isAuthenticated, tokenPayload, logout } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotificationStore();
+  // const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotificationStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const notifRef = useRef<HTMLDivElement>(null);
+  // const [showNotifications, setShowNotifications] = useState(false);
+  // const notifRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
 
   const { data: profile } = useQuery({
@@ -84,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifications(false);
+      // if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifications(false);
       if (userRef.current && !userRef.current.contains(e.target as Node)) setShowUserMenu(false);
     };
     document.addEventListener('mousedown', handler);
@@ -117,6 +121,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
 
+          {/* Notification bell — commented out for now.
           <div ref={notifRef} className="relative">
             <button
               onClick={() => setShowNotifications(!showNotifications)}
@@ -155,6 +160,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
               </div>
             )}
           </div>
+          */}
 
           <div ref={userRef} className="relative ml-1">
             <button

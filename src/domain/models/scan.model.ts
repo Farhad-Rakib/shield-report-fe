@@ -1,6 +1,18 @@
 export type ScanTool = 'Naabu' | 'Nuclei' | 'Reconftw';
 export type ScanStatus = 'Queued' | 'Running' | 'Completed' | 'Failed' | 'Cancelled';
 
+// Real tool identity must not be disclosed to clients — every client-facing surface renders
+// this generic label instead of the raw ScanTool value.
+export const SCAN_TOOL_LABELS: Record<ScanTool, string> = {
+  Naabu: 'Port Checking',
+  Nuclei: 'Vulnerability Scanning',
+  Reconftw: 'Reconnaissance',
+};
+
+export function getScanToolLabel(tool: ScanTool): string {
+  return SCAN_TOOL_LABELS[tool];
+}
+
 export interface ScanFindingRaw {
   id: number;
   scanId: number;

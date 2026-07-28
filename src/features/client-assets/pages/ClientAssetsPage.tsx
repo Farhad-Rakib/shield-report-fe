@@ -1,39 +1,27 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ShieldCheck, ShieldOff, Play } from 'lucide-react';
+import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
 import { CriticalityBadge, EnvironmentBadge } from '../../../components/badges/PentestBadges';
-import { useAuthStore } from '../../../features/auth/store/auth.store';
 import { clientAssetApi } from '../../../core/api/services/client-asset.api';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
-import { scanApi } from '../../../core/api/services/scan.api';
 import { ClientAsset } from '../../../domain/models/client-asset.model';
-import { ScanTool } from '../../../domain/models/scan.model';
 import { CreateClientAssetRequestDto } from '../../../domain/dto/client-asset.dto';
 
-const SCAN_TOOLS: ScanTool[] = ['Naabu', 'Nuclei', 'Reconftw'];
-
 export const ClientAssetsPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const tokenPayload = useAuthStore((s) => s.tokenPayload);
-  const isClientPortalUser = !!tokenPayload?.isClientPortalUser;
   const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [scanAsset, setScanAsset] = useState<ClientAsset | null>(null);
-  const [selectedTools, setSelectedTools] = useState<ScanTool[]>([]);
 
   const { data: orgData } = useQuery({
     queryKey: ['client-organizations-picker'],
     queryFn: () => clientOrganizationApi.getOrganizations({ pageSize: 100 }),
   });
   const organizations = orgData?.data ?? [];
-  const selectedOrg = organizations.find((org) => org.id === clientOrganizationId);
-  const selfServiceScanningAllowed = !isClientPortalUser || selectedOrg?.allowSelfServiceScanning !== false;
 
   useEffect(() => {
     if (clientOrganizationId === null && organizations.length > 0) {
@@ -74,18 +62,6 @@ export const ClientAssetsPage: React.FC = () => {
       toast.success('Scan authorization revoked');
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to revoke authorization'),
-  });
-
-  const createScanMutation = useMutation({
-    mutationFn: ({ assetId, tools }: { assetId: number; tools: ScanTool[] }) =>
-      scanApi.createScan(assetId, { tools }),
-    onSuccess: (scans) => {
-      toast.success(`Scan started with ${scans.length} tool${scans.length === 1 ? '' : 's'}`);
-      setScanAsset(null);
-      setSelectedTools([]);
-      navigate(`/scans/${scans[0].publicId}`);
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to start scan'),
   });
 
   const createFields: FormField[] = [
@@ -175,28 +151,16 @@ export const ClientAssetsPage: React.FC = () => {
       variant: 'danger',
       show: (asset) => asset.isAuthorizedForScanning,
     },
-    {
-      icon: Play,
-      label: 'Run Scan',
-      onClick: (asset) => {
-        setScanAsset(asset);
-        setSelectedTools([]);
-      },
-      variant: 'primary',
-      show: (asset) => asset.isAuthorizedForScanning && selfServiceScanningAllowed,
-    },
   ];
-
-  const toggleTool = (tool: ScanTool) => {
-    setSelectedTools((prev) => (prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool]));
-  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Client Assets</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Register assets, authorize them for scanning, and launch scans</p>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            Register assets and authorize them for scanning — scans are launched from an engagement (Run Scoped Scan), so findings are always reportable
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Client Organization</label>
@@ -218,12 +182,6 @@ export const ClientAssetsPage: React.FC = () => {
         </div>
       </div>
 
-      {isClientPortalUser && !selfServiceScanningAllowed && (
-        <div className="px-4 py-3 text-sm rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-          Self-service scanning is currently disabled for your organization — contact your pentest team to request a scan.
-        </div>
-      )}
-
       <DataTable
         columns={columns}
         data={assets}
@@ -244,51 +202,6 @@ export const ClientAssetsPage: React.FC = () => {
           onCancel={() => setShowAddModal(false)}
           isLoading={createMutation.isPending}
         />
-      </Modal>
-
-      <Modal isOpen={scanAsset !== null} onClose={() => setScanAsset(null)} title="Run Scan" size="md">
-        {scanAsset && (
-          <div className="space-y-4">
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white">{scanAsset.name}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{scanAsset.identifier}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select scan tools</p>
-              <div className="space-y-2">
-                {SCAN_TOOLS.map((tool) => (
-                  <label key={tool} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedTools.includes(tool)}
-                      onChange={() => toggleTool(tool)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{tool}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                type="button"
-                onClick={() => setScanAsset(null)}
-                disabled={createScanMutation.isPending}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={selectedTools.length === 0 || createScanMutation.isPending}
-                onClick={() => createScanMutation.mutate({ assetId: scanAsset.id, tools: selectedTools })}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                Start Scan
-              </button>
-            </div>
-          </div>
-        )}
       </Modal>
     </div>
   );

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Shield, Lock, Bug, Terminal as TerminalIcon, Radar, ServerCog, Eye, ShieldCheck } from 'lucide-react';
 
 const TERMINAL_LINES = [
-  { text: '$ naabu -host target.com -p 1-1000', tone: 'text-gray-400' },
+  { text: '$ scan --target target.com --mode port-checking', tone: 'text-gray-400' },
   { text: '[INFO] 4 open ports discovered', tone: 'text-blue-400' },
-  { text: '$ nuclei -u target.com -severity critical,high', tone: 'text-gray-400' },
+  { text: '$ scan --target target.com --mode vulnerability-scanning', tone: 'text-gray-400' },
   { text: '[CRITICAL] SQL injection in /login.php', tone: 'text-red-400' },
   { text: '[HIGH] Reflected XSS in /search', tone: 'text-orange-400' },
   { text: '$ vulnerability triage --auto-dedupe', tone: 'text-gray-400' },

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, LayoutDashboard, Users, Settings, Activity, Sliders, Moon, Sun, LogOut } from 'lucide-react';
+import { Search, LayoutDashboard, Users, Settings, Sliders, Moon, Sun, LogOut } from 'lucide-react';
 import { useAuthStore } from '../../features/auth/store/auth.store';
 import { useThemeStore } from '../../core/stores/theme.store';
 
@@ -30,8 +30,7 @@ export const CommandPalette: React.FC = () => {
   const commands: Command[] = useMemo(() => [
     { id: 'dashboard', label: 'Go to Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, category: 'Navigation', action: () => go('/dashboard'), keywords: 'home overview' },
     { id: 'users', label: 'Go to Users', icon: <Users className="w-4 h-4" />, category: 'Navigation', action: () => go('/users'), keywords: 'people accounts' },
-    { id: 'settings', label: 'Go to Settings', icon: <Settings className="w-4 h-4" />, category: 'Navigation', action: () => go('/settings/general') },
-    { id: 'activity', label: 'Go to Activity Log', icon: <Activity className="w-4 h-4" />, category: 'Navigation', action: () => go('/activity'), keywords: 'audit log history' },
+    { id: 'settings', label: 'Go to Settings', icon: <Settings className="w-4 h-4" />, category: 'Navigation', action: () => go('/site-settings') },
     { id: 'preferences', label: 'Go to Preferences', icon: <Sliders className="w-4 h-4" />, category: 'Navigation', action: () => go('/preferences'), keywords: 'theme density display' },
     { id: 'theme', label: theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode', icon: theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />, category: 'Actions', action: () => { toggleTheme(); setOpen(false); }, keywords: 'dark light mode appearance' },
     { id: 'logout', label: 'Logout', icon: <LogOut className="w-4 h-4" />, category: 'Actions', action: () => { setOpen(false); logout(); navigate('/login'); }, keywords: 'sign out exit' },

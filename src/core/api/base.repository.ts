@@ -57,7 +57,12 @@ export class BaseRepository implements IBaseRepository {
       async (error) => {
         const originalRequest = error.config;
 
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        // A 401 from the login call itself means "invalid credentials", not "expired session" —
+        // attempting a token refresh here has no session to refresh, and its failure ("Refresh
+        // token is missing") was masking the real "Invalid credentials" error on the login form.
+        const isLoginRequest = originalRequest?.url?.includes('/Auth/login');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isLoginRequest) {
           if (isRefreshing) {
             return new Promise((resolve, reject) => {
               failedQueue.push({ resolve, reject });
@@ -135,7 +140,11 @@ export class BaseRepository implements IBaseRepository {
   private handleAuthError(): void {
     const storage = AppConfig.auth.storageType === 'localStorage' ? localStorage : sessionStorage;
     storage.removeItem(AppConfig.auth.tokenKey);
-    if (window.location.pathname !== AppConfig.auth.loginPath) {
+    // Never bounce a visitor away from a page that's meant to work pre-login (login itself,
+    // and invite acceptance — a failed refresh attempt there is expected, not a real session
+    // loss, since there was never a session to begin with) — see AppConfig.auth.publicPaths.
+    const isOnPublicPath = AppConfig.auth.publicPaths.some((path) => window.location.pathname.startsWith(path));
+    if (!isOnPublicPath) {
       window.location.href = AppConfig.auth.loginPath;
     }
   }

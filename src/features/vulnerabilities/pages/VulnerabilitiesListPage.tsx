@@ -7,15 +7,19 @@ import { SeverityBadge, PatchStatusBadge } from '../../../components/badges/Pent
 import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
 import { Vulnerability, Severity, PatchStatus } from '../../../domain/models/vulnerability.model';
+import { SCAN_TOOL_LABELS } from '../../../domain/models/scan.model';
 
 const SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low', 'Informational'];
 const PATCH_STATUSES: PatchStatus[] = ['Open', 'InProgress', 'Patched', 'AcceptedRisk', 'WontFix'];
 
 // toolsUsed is stored server-side as a JSON string array, e.g. '["Nuclei","Naabu"]' or '["Manual"]'.
+// Real tool identity must not be disclosed — map each entry through SCAN_TOOL_LABELS, falling
+// back to the raw value only for non-tool entries like "Manual".
 function formatToolsUsed(toolsUsed: string): string {
   try {
     const tools = JSON.parse(toolsUsed);
-    return Array.isArray(tools) && tools.length > 0 ? tools.join(', ') : '—';
+    if (!Array.isArray(tools) || tools.length === 0) return '—';
+    return tools.map((tool) => SCAN_TOOL_LABELS[tool as keyof typeof SCAN_TOOL_LABELS] ?? tool).join(', ');
   } catch {
     return toolsUsed || '—';
   }

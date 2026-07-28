@@ -15,7 +15,7 @@ import { scanApi } from '../../../core/api/services/scan.api';
 import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
 import { useAuthStore } from '../../auth/store/auth.store';
 import { Permissions } from '../../../core/constants/permissions';
-import { ScanStatus } from '../../../domain/models/scan.model';
+import { ScanStatus, getScanToolLabel } from '../../../domain/models/scan.model';
 
 const TERMINAL_STATUSES: ScanStatus[] = ['Completed', 'Failed', 'Cancelled'];
 
@@ -85,7 +85,7 @@ export const ScanDetailPage: React.FC = () => {
         </Link>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white font-mono">
-            {steps.length > 1 ? 'Scan Chain' : `${scan.tool} Scan`}
+            {steps.length > 1 ? 'Scan Chain' : `${getScanToolLabel(scan.tool)} Scan`}
           </h1>
           {overallStatus && <ScanStatusBadge status={overallStatus} />}
           {canStop && (
@@ -116,7 +116,7 @@ export const ScanDetailPage: React.FC = () => {
 
       <div>
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>
-        <ScanConsolePane entries={entries} activeTool={runningStep?.tool} live={!!runningStep} />
+        <ScanConsolePane entries={entries} activeTool={runningStep ? getScanToolLabel(runningStep.tool) : undefined} live={!!runningStep} />
       </div>
 
       <ConfirmDialog

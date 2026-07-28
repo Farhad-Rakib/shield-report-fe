@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, UserPlus, X, Play, Bug } from 'lucide-react';
+import { ArrowLeft, UserPlus, X, Play, Bug, FileText, Download, Edit3, Eye, Check, RefreshCw } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal/Modal';
+import { ReportEditorModal } from '../../reports/components/ReportEditorModal';
 import { Loader } from '../../../components/ui/Loader/Loader';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
 import { toast } from '../../../components/ui/Toast/toast.store';
@@ -11,12 +12,26 @@ import { engagementApi } from '../../../core/api/services/engagement.api';
 import { clientAssetApi } from '../../../core/api/services/client-asset.api';
 import { scanApi } from '../../../core/api/services/scan.api';
 import { staffUserApi } from '../../../core/api/services/staff-user.api';
+import { reportApi } from '../../../core/api/services/report.api';
 import { EngagementStatus } from '../../../domain/models/engagement.model';
 import { ClientAsset } from '../../../domain/models/client-asset.model';
-import { ScanTool } from '../../../domain/models/scan.model';
+import { ScanTool, getScanToolLabel } from '../../../domain/models/scan.model';
+import { Report } from '../../../domain/models/report.model';
+import { useAuthStore } from '../../auth/store/auth.store';
+import { Permissions } from '../../../core/constants/permissions';
 
 const STATUS_OPTIONS: EngagementStatus[] = ['Scheduled', 'InProgress', 'InReview', 'Completed'];
 const SCAN_TOOLS: ScanTool[] = ['Naabu', 'Nuclei', 'Reconftw'];
+
+// Opens the file in a new tab instead of forcing a save-to-disk download — the browser's own
+// viewer (native for PDF; whatever the OS/browser has registered for .docx) takes it from there.
+// Revocation is delayed rather than immediate: the new tab needs time to actually load the blob
+// URL before it's invalidated.
+function openBlobInNewTab(blob: Blob) {
+  const url = window.URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+}
 
 export const EngagementDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -49,6 +64,98 @@ export const EngagementDetailPage: React.FC = () => {
     enabled: !!engagement,
   });
   const scannableAssets = (assetsData?.data ?? []).filter((a: ClientAsset) => a.isAuthorizedForScanning);
+
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+
+  const { data: reports = [] } = useQuery({
+    queryKey: ['reports', engagementId],
+    queryFn: () => reportApi.listForEngagement(engagementId),
+    enabled: !!engagementId,
+  });
+
+  const [editingReportId, setEditingReportId] = useState<number | null>(null);
+  const [narrativeDraft, setNarrativeDraft] = useState({ executiveSummary: '', keyFindings: '', keyRecommendations: '' });
+  const [rejectingReportId, setRejectingReportId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [editingInBrowserReportId, setEditingInBrowserReportId] = useState<number | null>(null);
+
+  const invalidateReports = () => queryClient.invalidateQueries({ queryKey: ['reports', engagementId] });
+
+  const generateReportMutation = useMutation({
+    mutationFn: () => reportApi.generate(engagementId),
+    onSuccess: () => {
+      invalidateReports();
+      toast.success('Report generated — review the draft narrative before approving');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to generate report'),
+  });
+
+  const updateNarrativeMutation = useMutation({
+    // Edits happen only inside the app — saving re-fills the stored .docx draft immediately so
+    // the pentester's edits are reflected without any upload/download round-trip through Word.
+    mutationFn: async () => {
+      await reportApi.updateNarrative(editingReportId!, narrativeDraft);
+      return reportApi.regenerate(editingReportId!);
+    },
+    onSuccess: () => {
+      invalidateReports();
+      toast.success('Narrative saved and draft regenerated');
+      setEditingReportId(null);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to save narrative'),
+  });
+
+  const convertToPdfMutation = useMutation({
+    mutationFn: (id: number) => reportApi.convertToPdf(id),
+    onSuccess: () => {
+      invalidateReports();
+      toast.success('Report converted to PDF');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to convert report to PDF'),
+  });
+
+  const approveReportMutation = useMutation({
+    mutationFn: (id: number) => reportApi.approve(id),
+    onSuccess: () => {
+      invalidateReports();
+      toast.success('Report approved');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to approve report'),
+  });
+
+  const rejectReportMutation = useMutation({
+    mutationFn: () => reportApi.reject(rejectingReportId!, rejectReason),
+    onSuccess: () => {
+      invalidateReports();
+      toast.success('Report rejected');
+      setRejectingReportId(null);
+      setRejectReason('');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to reject report'),
+  });
+
+  const downloadDraft = async (report: Report) => {
+    try {
+      const blob = await reportApi.downloadDraft(report.id);
+      openBlobInNewTab(blob);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to open draft');
+    }
+  };
+
+  const downloadPdf = async (report: Report) => {
+    try {
+      const blob = await reportApi.downloadPdf(report.id);
+      openBlobInNewTab(blob);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to open PDF');
+    }
+  };
+
+  const openNarrativeEditor = (report: Report) => {
+    setEditingReportId(report.id);
+    setNarrativeDraft({ executiveSummary: report.executiveSummary, keyFindings: report.keyFindings, keyRecommendations: report.keyRecommendations });
+  };
 
   const statusMutation = useMutation({
     mutationFn: (status: EngagementStatus) =>
@@ -200,6 +307,183 @@ export const EngagementDetailPage: React.FC = () => {
         </div>
       </div>
 
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Reports ({reports.length})</h2>
+          {hasPermission(Permissions.VulnerabilityReportsGenerate) && (
+            <button
+              onClick={() => generateReportMutation.mutate()}
+              disabled={generateReportMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium disabled:opacity-50"
+            >
+              <FileText className="w-3.5 h-3.5" /> Generate Report
+            </button>
+          )}
+        </div>
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+          {reports.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">No reports generated yet</p>
+          ) : (
+            reports.map((report) => (
+              <div key={report.id} className="px-4 py-3 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">Version {report.version}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {report.status} · Generated {new Date(report.generatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {report.status === 'PendingApproval' && (
+                      <button
+                        onClick={() => openNarrativeEditor(report)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Review Narrative
+                      </button>
+                    )}
+                    {report.status === 'PendingApproval' && hasPermission(Permissions.VulnerabilityReportsApprove) && (
+                      <>
+                        <button
+                          onClick={() => approveReportMutation.mutate(report.id)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-xs font-medium"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Approve
+                        </button>
+                        <button
+                          onClick={() => setRejectingReportId(report.id)}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-xs font-medium"
+                        >
+                          <X className="w-3.5 h-3.5" /> Reject
+                        </button>
+                      </>
+                    )}
+                    {report.status === 'PendingApproval' && report.draftAvailable && hasPermission(Permissions.VulnerabilityReportsGenerate) && (
+                      <button
+                        onClick={() => setEditingInBrowserReportId(report.id)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-xs font-medium"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> Edit in Browser
+                      </button>
+                    )}
+                    {report.draftAvailable && hasPermission(Permissions.VulnerabilityReportsDownload) && (
+                      <button
+                        onClick={() => downloadDraft(report)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download Draft (.docx)
+                      </button>
+                    )}
+                    {report.draftAvailable && hasPermission(Permissions.VulnerabilityReportsGenerate) && (
+                      <button
+                        onClick={() => convertToPdfMutation.mutate(report.id)}
+                        disabled={convertToPdfMutation.isPending}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-xs font-medium disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" /> Convert to PDF
+                      </button>
+                    )}
+                    {report.pdfAvailable && hasPermission(Permissions.VulnerabilityReportsDownload) && (
+                      <button
+                        onClick={() => downloadPdf(report)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Download PDF
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {report.status === 'Rejected' && report.rejectionReason && (
+                  <p className="text-xs text-red-600 dark:text-red-400">Rejected: {report.rejectionReason}</p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <Modal isOpen={editingReportId !== null} onClose={() => setEditingReportId(null)} title="Review Report Narrative" size="lg">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Executive Summary</label>
+            <textarea
+              value={narrativeDraft.executiveSummary}
+              onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, executiveSummary: e.target.value }))}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Key Findings</label>
+            <textarea
+              value={narrativeDraft.keyFindings}
+              onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, keyFindings: e.target.value }))}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Key Recommendations</label>
+            <textarea
+              value={narrativeDraft.keyRecommendations}
+              onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, keyRecommendations: e.target.value }))}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => setEditingReportId(null)}
+              disabled={updateNarrativeMutation.isPending}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => updateNarrativeMutation.mutate()}
+              disabled={updateNarrativeMutation.isPending}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={rejectingReportId !== null} onClose={() => setRejectingReportId(null)} title="Reject Report" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+          </div>
+          <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={() => setRejectingReportId(null)}
+              disabled={rejectReportMutation.isPending}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!rejectReason.trim() || rejectReportMutation.isPending}
+              onClick={() => rejectReportMutation.mutate()}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal isOpen={showAssignModal} onClose={() => setShowAssignModal(false)} title="Assign Pentester" size="sm">
         <div className="space-y-4">
           <div>
@@ -275,7 +559,7 @@ export const EngagementDetailPage: React.FC = () => {
                     onChange={() => toggleTool(tool)}
                     className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{tool}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{getScanToolLabel(tool)}</span>
                 </label>
               ))}
             </div>
@@ -300,6 +584,16 @@ export const EngagementDetailPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {editingInBrowserReportId !== null && (
+        <ReportEditorModal
+          reportId={editingInBrowserReportId}
+          onClose={() => {
+            setEditingInBrowserReportId(null);
+            invalidateReports();
+          }}
+        />
+      )}
     </div>
   );
 };

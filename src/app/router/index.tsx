@@ -19,6 +19,8 @@ import { MenuPage } from '../../features/menu/pages/MenuPage';
 import { PreferencesPage } from '../../features/preferences/pages/PreferencesPage';
 import { ProfilePage } from '../../features/profile/pages/ProfilePage';
 import { SiteSettingsPage } from '../../features/site-settings/pages/SiteSettingsPage';
+import { LlmConfigurationPage } from '../../features/llm-configuration/pages/LlmConfigurationPage';
+import { ReportTemplatesPage } from '../../features/report-templates/pages/ReportTemplatesPage';
 import { ClientOrganizationsPage } from '../../features/client-organizations/pages/ClientOrganizationsPage';
 import { ClientAssetsPage } from '../../features/client-assets/pages/ClientAssetsPage';
 import { ScansListPage } from '../../features/scans/pages/ScansListPage';
@@ -131,6 +133,22 @@ export const router = createBrowserRouter([
         element: (
           <PermissionGuard permissions={[Permissions.RegistrationInvitesRead]}>
             <InviteUsersPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'llm-providers',
+        element: (
+          <PermissionGuard permissions={[Permissions.LlmProviderConfigurationsRead]}>
+            <LlmConfigurationPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'report-templates',
+        element: (
+          <PermissionGuard permissions={[Permissions.ReportTemplatesRead]}>
+            <ReportTemplatesPage />
           </PermissionGuard>
         ),
       },
