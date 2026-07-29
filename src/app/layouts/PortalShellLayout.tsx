@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Briefcase, Server, Bug, LogOut, Menu, X, Sun, Moon, ShieldCheck } from 'lucide-react';
+import { Briefcase, Server, Bug, Radar, LogOut, Menu, X, Sun, Moon, ShieldCheck } from 'lucide-react';
 import { useAuthStore } from '../../features/auth/store/auth.store';
 import { useThemeStore } from '../../core/stores/theme.store';
 import { engagementApi } from '../../core/api/services/engagement.api';
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { label: 'Engagements', href: '/portal/engagements', icon: Briefcase },
   { label: 'Assets', href: '/portal/assets', icon: Server },
   { label: 'Vulnerabilities', href: '/portal/vulnerabilities', icon: Bug },
+  { label: 'Scans', href: '/portal/scans', icon: Radar },
 ];
 
 export const PortalShellLayout: React.FC = () => {

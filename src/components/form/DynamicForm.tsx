@@ -69,7 +69,7 @@ export const DynamicForm: React.FC<DynamicFormProps> = ({
   );
 
   const defaultValues = fields.reduce<Record<string, any>>((acc, field) => {
-    return { ...acc, [field.name]: field.defaultValue || '' };
+    return { ...acc, [field.name]: field.defaultValue ?? '' };
   }, {});
 
   const {

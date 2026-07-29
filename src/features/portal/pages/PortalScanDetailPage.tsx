@@ -1,0 +1,154 @@
+import { useEffect, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { ArrowLeft, AlertTriangle, Square } from 'lucide-react';
+import { ScanConsolePane } from '../../../components/scan/ScanConsolePane';
+import { ScanChainProgress } from '../../../components/scan/ScanChainProgress';
+import { FindingsPanel } from '../../../components/scan/FindingsPanel';
+import { ScanStatusBadge, SeverityBadge } from '../../../components/badges/PentestBadges';
+import { Loader } from '../../../components/ui/Loader/Loader';
+import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
+import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
+import { toast } from '../../../components/ui/Toast/toast.store';
+import { useScanChainConsole } from '../../../core/hooks/useScanChainConsole';
+import { scanApi } from '../../../core/api/services/scan.api';
+import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
+import { useAuthStore } from '../../auth/store/auth.store';
+import { Permissions } from '../../../core/constants/permissions';
+import { ScanStatus, getScanToolLabel } from '../../../domain/models/scan.model';
+
+const TERMINAL_STATUSES: ScanStatus[] = ['Completed', 'Failed', 'Cancelled'];
+
+const extractErrorMessage = (error: unknown, fallback: string): string => {
+  const err = error as { response?: { data?: { message?: string } }; message?: string } | null;
+  return err?.response?.data?.message || err?.message || fallback;
+};
+
+export const PortalScanDetailPage: React.FC = () => {
+  const { publicId } = useParams<{ publicId: string }>();
+  const queryClient = useQueryClient();
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const [confirmStopOpen, setConfirmStopOpen] = useState(false);
+
+  const { data: scan, isLoading, error, refetch } = useQuery({
+    queryKey: ['portal-scan', publicId],
+    queryFn: () => scanApi.getScanByPublicId(publicId!),
+    enabled: !!publicId,
+  });
+
+  const { entries, steps, connectionError, latestPhase, findingCounts, progress, activePublicId } = useScanChainConsole(scan);
+  const liveFindings = entries.filter((e): e is Extract<typeof entries[number], { kind: 'finding' }> => e.kind === 'finding');
+
+  const lastStep = steps[steps.length - 1];
+  const chainComplete = !!lastStep && TERMINAL_STATUSES.includes(lastStep.status);
+  const runningStep = steps.find((s) => s.status === 'Running');
+  const overallStatus: ScanStatus | undefined = runningStep
+    ? 'Running'
+    : chainComplete
+      ? lastStep.status
+      : scan?.status;
+
+  useEffect(() => {
+    if (chainComplete) {
+      queryClient.invalidateQueries({ queryKey: ['portal-scan', publicId] });
+    }
+  }, [chainComplete, publicId, queryClient]);
+
+  const stopMutation = useMutation({
+    mutationFn: () => scanApi.cancelScan(activePublicId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portal-scan', publicId] });
+      toast.success('Scan stopped');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to stop scan'),
+  });
+
+  const { data: vulnResults } = useQuery({
+    queryKey: ['portal-scan-vulnerabilities', steps.map((s) => s.id)],
+    queryFn: () => Promise.all(steps.map((s) => vulnerabilityApi.getVulnerabilities({ scanId: s.id }))),
+    enabled: chainComplete && steps.length > 0,
+  });
+  const vulnerabilities = vulnResults?.flatMap((page) => page.data) ?? [];
+
+  if (isLoading) return <Loader />;
+  if (error || !scan) return <ErrorState message={extractErrorMessage(error, 'Scan not found')} retry={() => refetch()} />;
+
+  const canStop = !!activePublicId && !chainComplete && hasPermission(Permissions.ScansCancel);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <Link to="/portal/scans" className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-cyan-400 hover:underline mb-2">
+          <ArrowLeft className="w-4 h-4" /> Back to Scans
+        </Link>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white font-mono">
+            {steps.length > 1 ? 'Scan Chain' : `${getScanToolLabel(scan.tool)} Scan`}
+          </h1>
+          {overallStatus && <ScanStatusBadge status={overallStatus} />}
+          {canStop && (
+            <button
+              onClick={() => setConfirmStopOpen(true)}
+              disabled={stopMutation.isPending}
+              className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-400 border border-red-500/30 rounded-md hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+            >
+              <Square className="w-3.5 h-3.5" /> Stop Scan
+            </button>
+          )}
+        </div>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">{scan.clientAssetName}</p>
+      </div>
+
+      {connectionError && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-400 text-sm">
+          <AlertTriangle className="w-4 h-4" /> Live console unavailable: {connectionError}
+        </div>
+      )}
+
+      <ScanChainProgress steps={steps} latestPhase={latestPhase} findingCounts={findingCounts} progress={progress} />
+
+      <div>
+        <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Findings ({liveFindings.length})</h2>
+        <FindingsPanel findings={liveFindings} />
+      </div>
+
+      <div>
+        <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>
+        <ScanConsolePane entries={entries} activeTool={runningStep ? getScanToolLabel(runningStep.tool) : undefined} live={!!runningStep} />
+      </div>
+
+      <ConfirmDialog
+        isOpen={confirmStopOpen}
+        onClose={() => setConfirmStopOpen(false)}
+        onConfirm={() => stopMutation.mutate()}
+        title="Stop this scan?"
+        message="This cancels the currently running tool and the rest of the chain. Findings already recorded are kept."
+        confirmText="Stop Scan"
+        variant="danger"
+      />
+
+      {chainComplete && (
+        <div>
+          <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Vulnerabilities Found ({vulnerabilities.length})
+          </h2>
+          {vulnerabilities.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No vulnerabilities were auto-created from this scan.</p>
+          ) : (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+              {vulnerabilities.map((vuln) => (
+                <div key={vuln.id} className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">{vuln.title}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{vuln.endpoint}</p>
+                  </div>
+                  <SeverityBadge severity={vuln.severity} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};

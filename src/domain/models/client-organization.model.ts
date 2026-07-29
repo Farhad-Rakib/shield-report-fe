@@ -6,4 +6,5 @@ export interface ClientOrganization {
   primaryContactEmail: string | null;
   isActive: boolean;
   allowSelfServiceScanning: boolean;
+  allowScanConsoleAccess: boolean;
 }

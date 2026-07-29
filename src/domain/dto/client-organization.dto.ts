@@ -3,6 +3,7 @@ export interface CreateClientOrganizationRequestDto {
   primaryContactName?: string | null;
   primaryContactEmail?: string | null;
   allowSelfServiceScanning?: boolean;
+  allowScanConsoleAccess?: boolean;
 }
 
 export interface UpdateClientOrganizationRequestDto {
@@ -10,4 +11,5 @@ export interface UpdateClientOrganizationRequestDto {
   primaryContactName?: string | null;
   primaryContactEmail?: string | null;
   allowSelfServiceScanning: boolean;
+  allowScanConsoleAccess: boolean;
 }

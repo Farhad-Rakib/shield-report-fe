@@ -46,6 +46,7 @@ export const ClientOrganizationsPage: React.FC = () => {
     { name: 'primaryContactName', label: 'Primary Contact Name', type: 'text', placeholder: 'Jane Doe' },
     { name: 'primaryContactEmail', label: 'Primary Contact Email', type: 'email', placeholder: 'jane@acme.com' },
     { name: 'allowSelfServiceScanning', label: 'Allow Self-Service Scanning', type: 'switch', defaultValue: true },
+    { name: 'allowScanConsoleAccess', label: 'Allow Client to View Scan Console', type: 'switch', defaultValue: false },
   ];
 
   const editFields: FormField[] = [
@@ -53,6 +54,7 @@ export const ClientOrganizationsPage: React.FC = () => {
     { name: 'primaryContactName', label: 'Primary Contact Name', type: 'text', defaultValue: editOrg?.primaryContactName || '' },
     { name: 'primaryContactEmail', label: 'Primary Contact Email', type: 'email', defaultValue: editOrg?.primaryContactEmail || '' },
     { name: 'allowSelfServiceScanning', label: 'Allow Self-Service Scanning', type: 'switch', defaultValue: editOrg?.allowSelfServiceScanning ?? true },
+    { name: 'allowScanConsoleAccess', label: 'Allow Client to View Scan Console', type: 'switch', defaultValue: editOrg?.allowScanConsoleAccess ?? false },
   ];
 
   const handleCreate = (data: Record<string, any>) => {
@@ -61,6 +63,7 @@ export const ClientOrganizationsPage: React.FC = () => {
       primaryContactName: data.primaryContactName || null,
       primaryContactEmail: data.primaryContactEmail || null,
       allowSelfServiceScanning: data.allowSelfServiceScanning ?? true,
+      allowScanConsoleAccess: data.allowScanConsoleAccess ?? false,
     });
   };
 
@@ -73,6 +76,7 @@ export const ClientOrganizationsPage: React.FC = () => {
         primaryContactName: data.primaryContactName || null,
         primaryContactEmail: data.primaryContactEmail || null,
         allowSelfServiceScanning: data.allowSelfServiceScanning ?? true,
+        allowScanConsoleAccess: data.allowScanConsoleAccess ?? false,
       },
     });
   };
@@ -123,6 +127,21 @@ export const ClientOrganizationsPage: React.FC = () => {
           }`}
         >
           {org.allowSelfServiceScanning ? 'Allowed' : 'Disabled'}
+        </span>
+      ),
+    },
+    {
+      key: 'allowScanConsoleAccess',
+      label: 'Scan Console Access',
+      render: (_, org) => (
+        <span
+          className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+            org.allowScanConsoleAccess
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+              : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+          }`}
+        >
+          {org.allowScanConsoleAccess ? 'Allowed' : 'Disabled'}
         </span>
       ),
     },

@@ -34,6 +34,8 @@ import { PortalEngagementsPage } from '../../features/portal/pages/PortalEngagem
 import { PortalAssetsPage } from '../../features/portal/pages/PortalAssetsPage';
 import { PortalVulnerabilitiesPage } from '../../features/portal/pages/PortalVulnerabilitiesPage';
 import { PortalVulnerabilityDetailPage } from '../../features/portal/pages/PortalVulnerabilityDetailPage';
+import { PortalScansListPage } from '../../features/portal/pages/PortalScansListPage';
+import { PortalScanDetailPage } from '../../features/portal/pages/PortalScanDetailPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ForbiddenPage } from '../pages/ForbiddenPage';
 
@@ -241,6 +243,8 @@ export const router = createBrowserRouter([
       { path: 'assets', element: <PortalAssetsPage /> },
       { path: 'vulnerabilities', element: <PortalVulnerabilitiesPage /> },
       { path: 'vulnerabilities/:id', element: <PortalVulnerabilityDetailPage /> },
+      { path: 'scans', element: <PortalScansListPage /> },
+      { path: 'scans/:publicId', element: <PortalScanDetailPage /> },
     ],
   },
   { path: '/403', element: <ForbiddenPage /> },
