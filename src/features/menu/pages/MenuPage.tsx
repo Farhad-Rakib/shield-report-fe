@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
@@ -73,6 +73,8 @@ export const MenuPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editItem, setEditItem] = useState<MenuDto | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: rawMenuItems = [], isLoading, error, refetch } = useQuery({
     queryKey: ['menu-crud'],
@@ -87,6 +89,13 @@ export const MenuPage: React.FC = () => {
     seen.add(item.id);
     return true;
   });
+
+  // GET /Menu/all has no server-side pagination — paginate client-side over the flattened list.
+  const totalPages = Math.max(1, Math.ceil(uniqueItems.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+  const pagedItems = uniqueItems.slice((page - 1) * pageSize, page * pageSize);
 
   const createMutation = useMutation({
     mutationFn: (dto: CreateMenuDto) => menuCrudApi.create(dto),
@@ -199,7 +208,7 @@ export const MenuPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={uniqueItems}
+        data={pagedItems}
         isLoading={isLoading}
         error={error?.message}
         searchable
@@ -208,6 +217,14 @@ export const MenuPage: React.FC = () => {
         actions={{ add: { label: 'Add Menu Item', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: page,
+          totalPages,
+          pageSize,
+          total: uniqueItems.length,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add Menu Item" size="md">

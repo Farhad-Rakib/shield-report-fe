@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Eye } from 'lucide-react';
@@ -13,13 +14,15 @@ const extractErrorMessage = (error: unknown): string | undefined => {
 
 export const PortalScansListPage: React.FC = () => {
   const navigate = useNavigate();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   // No clientOrganizationId param — the backend's HasQueryFilter on Scan already scopes
   // results to the caller's own org (same pattern as PortalVulnerabilitiesPage). If the org
   // hasn't been opted into AllowScanConsoleAccess, the API 403s and its message surfaces below.
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['portal-scans'],
-    queryFn: () => scanApi.getScans({ pageSize: 50 }),
+    queryKey: ['portal-scans', page, pageSize],
+    queryFn: () => scanApi.getScans({ page, pageSize }),
   });
   const scans = data?.data ?? [];
 
@@ -64,6 +67,14 @@ export const PortalScansListPage: React.FC = () => {
         emptyState={{ title: 'No scans found', description: 'Scans your pentest team runs against your assets will show up here.' }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
     </div>
   );

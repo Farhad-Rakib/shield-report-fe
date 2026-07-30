@@ -13,10 +13,12 @@ export const ClientOrganizationsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editOrg, setEditOrg] = useState<ClientOrganization | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['client-organizations'],
-    queryFn: () => clientOrganizationApi.getOrganizations(),
+    queryKey: ['client-organizations', page, pageSize],
+    queryFn: () => clientOrganizationApi.getOrganizations({ page, pageSize }),
   });
   const organizations = data?.data ?? [];
 
@@ -168,6 +170,14 @@ export const ClientOrganizationsPage: React.FC = () => {
         actions={{ add: { label: 'Add Organization', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Register Client Organization" size="md">

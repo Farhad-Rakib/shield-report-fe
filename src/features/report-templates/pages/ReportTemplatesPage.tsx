@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2, Upload, FileX, FileText, Star } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
@@ -26,11 +26,20 @@ export const ReportTemplatesPage: React.FC = () => {
   const [clearItem, setClearItem] = useState<ReportTemplate | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: templates = [], isLoading, error, refetch } = useQuery({
     queryKey: ['report-templates'],
     queryFn: () => reportTemplateApi.getAll(),
   });
+
+  // GET /ReportTemplates has no server-side pagination — paginate client-side over the full list.
+  const totalPages = Math.max(1, Math.ceil(templates.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+  const pagedTemplates = templates.slice((page - 1) * pageSize, page * pageSize);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['report-templates'] });
 
@@ -139,13 +148,21 @@ export const ReportTemplatesPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={templates}
+        data={pagedTemplates}
         isLoading={isLoading}
         error={error?.message}
         emptyState={{ title: 'No report templates found', description: 'Create a template to get started' }}
         actions={{ add: { label: 'Add Template', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: page,
+          totalPages,
+          pageSize,
+          total: templates.length,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add Report Template" size="md">

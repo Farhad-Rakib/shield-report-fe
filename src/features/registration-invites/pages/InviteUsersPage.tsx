@@ -47,10 +47,12 @@ export const InviteUsersPage: React.FC = () => {
   const [roleId, setRoleId] = useState<number | ''>('');
   const [clientOrganizationId, setClientOrganizationId] = useState<number | ''>('');
   const [lifetime, setLifetime] = useState<InviteLifetime>('SevenDays');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['registration-invites'],
-    queryFn: () => registrationInviteApi.getInvites(),
+    queryKey: ['registration-invites', page, pageSize],
+    queryFn: () => registrationInviteApi.getInvites({ page, pageSize }),
   });
   const invites = data?.data ?? [];
 
@@ -165,6 +167,14 @@ export const InviteUsersPage: React.FC = () => {
         actions={{ add: { label: 'Invite User', onClick: () => setShowInviteModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showInviteModal} onClose={() => setShowInviteModal(false)} title="Invite User" size="md">

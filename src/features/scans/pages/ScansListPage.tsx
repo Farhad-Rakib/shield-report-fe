@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Eye } from 'lucide-react';
@@ -8,10 +9,12 @@ import { Scan, getScanToolLabel } from '../../../domain/models/scan.model';
 
 export const ScansListPage: React.FC = () => {
   const navigate = useNavigate();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['scans'],
-    queryFn: () => scanApi.getScans({ pageSize: 50 }),
+    queryKey: ['scans', page, pageSize],
+    queryFn: () => scanApi.getScans({ page, pageSize }),
   });
   const scans = data?.data ?? [];
 
@@ -56,6 +59,14 @@ export const ScansListPage: React.FC = () => {
         emptyState={{ title: 'No scans found', description: 'Run a scan from the Client Assets page to get started' }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
     </div>
   );

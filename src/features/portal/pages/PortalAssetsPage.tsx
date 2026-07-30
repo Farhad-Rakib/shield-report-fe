@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { DataTable, Column } from '../../../components/table/DataTable';
@@ -9,10 +10,12 @@ import { ClientAsset } from '../../../domain/models/client-asset.model';
 export const PortalAssetsPage: React.FC = () => {
   const tokenPayload = useAuthStore((s) => s.tokenPayload);
   const clientOrganizationId = Number(tokenPayload?.clientOrganizationId);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['portal-assets', clientOrganizationId],
-    queryFn: () => clientAssetApi.getAssetsForClient(clientOrganizationId, { pageSize: 100 }),
+    queryKey: ['portal-assets', clientOrganizationId, page, pageSize],
+    queryFn: () => clientAssetApi.getAssetsForClient(clientOrganizationId, { page, pageSize }),
     enabled: !!clientOrganizationId,
   });
   const assets = data?.data ?? [];
@@ -62,6 +65,14 @@ export const PortalAssetsPage: React.FC = () => {
         searchable={false}
         emptyState={{ title: 'No assets yet', description: 'Your pentest team will register assets here as they’re scoped for testing.' }}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
     </div>
   );

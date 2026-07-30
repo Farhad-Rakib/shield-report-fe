@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Mail, Eye } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
@@ -67,11 +67,20 @@ export const UsersPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editUser, setEditUser] = useState<UserDto | null>(null);
   const [viewUser, setViewUser] = useState<UserDto | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: users = [], isLoading, error, refetch } = useQuery({
     queryKey: ['users'],
     queryFn: () => usersApi.getAll(),
   });
+
+  // GET /Users has no server-side pagination — paginate client-side over the full list.
+  const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+  const pagedUsers = users.slice((page - 1) * pageSize, page * pageSize);
 
   const { data: roles = [] } = useQuery({
     queryKey: ['roles-list'],
@@ -201,7 +210,7 @@ export const UsersPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={users}
+        data={pagedUsers}
         isLoading={isLoading}
         error={error?.message}
         searchable
@@ -210,6 +219,14 @@ export const UsersPage: React.FC = () => {
         actions={{ add: { label: 'Add User', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: page,
+          totalPages,
+          pageSize,
+          total: users.length,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add New User" size="md">

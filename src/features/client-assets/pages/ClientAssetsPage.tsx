@@ -16,6 +16,8 @@ export const ClientAssetsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: orgData } = useQuery({
     queryKey: ['client-organizations-picker'],
@@ -29,9 +31,13 @@ export const ClientAssetsPage: React.FC = () => {
     }
   }, [organizations, clientOrganizationId]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [clientOrganizationId]);
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['client-assets', clientOrganizationId],
-    queryFn: () => clientAssetApi.getAssetsForClient(clientOrganizationId!),
+    queryKey: ['client-assets', clientOrganizationId, page, pageSize],
+    queryFn: () => clientAssetApi.getAssetsForClient(clientOrganizationId!, { page, pageSize }),
     enabled: clientOrganizationId !== null,
   });
   const assets = data?.data ?? [];
@@ -192,6 +198,14 @@ export const ClientAssetsPage: React.FC = () => {
         actions={{ add: { label: 'Add Asset', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Register New Asset" size="md">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2, Power } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
@@ -21,11 +21,20 @@ export const LlmConfigurationPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editItem, setEditItem] = useState<LlmProviderConfiguration | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: configurations = [], isLoading, error, refetch } = useQuery({
     queryKey: ['llm-provider-configurations'],
     queryFn: () => llmConfigurationApi.getAll(),
   });
+
+  // GET /LlmProviderConfigurations has no server-side pagination — paginate client-side.
+  const totalPages = Math.max(1, Math.ceil(configurations.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+  const pagedConfigurations = configurations.slice((page - 1) * pageSize, page * pageSize);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['llm-provider-configurations'] });
 
@@ -132,13 +141,21 @@ export const LlmConfigurationPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={configurations}
+        data={pagedConfigurations}
         isLoading={isLoading}
         error={error?.message}
         emptyState={{ title: 'No LLM providers configured', description: 'Add a provider to enable AI-assisted vulnerability explanations' }}
         actions={{ add: { label: 'Add Provider', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: page,
+          totalPages,
+          pageSize,
+          total: configurations.length,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add LLM Provider" size="lg">

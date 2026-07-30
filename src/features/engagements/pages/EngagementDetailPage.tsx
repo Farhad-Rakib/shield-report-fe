@@ -201,6 +201,11 @@ export const EngagementDetailPage: React.FC = () => {
       setShowScanModal(false);
       setScanAssetId('');
       setSelectedTools([]);
+      // ScansListPage's ['scans'] query has a 5-minute global staleTime (AppProviders.tsx) and
+      // nothing else invalidates it — without this, a scan created here won't show up on the
+      // Scans list page if the list was already cached from earlier in the session (looks like
+      // the running scan "vanished" if you flip to another menu and back to Scans quickly).
+      queryClient.invalidateQueries({ queryKey: ['scans'] });
       navigate(`/scans/${scans[0].publicId}`);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to start scan'),

@@ -30,6 +30,8 @@ export const VulnerabilitiesListPage: React.FC = () => {
   const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
   const [severity, setSeverity] = useState<Severity | ''>('');
   const [patchStatus, setPatchStatus] = useState<PatchStatus | ''>('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: orgData } = useQuery({
     queryKey: ['client-organizations-picker'],
@@ -43,14 +45,21 @@ export const VulnerabilitiesListPage: React.FC = () => {
     }
   }, [organizations, clientOrganizationId]);
 
+  // Any filter change invalidates the current page — a page number valid for one filter
+  // combination can easily be out of range (or just show the wrong slice) for another.
+  useEffect(() => {
+    setPage(1);
+  }, [clientOrganizationId, severity, patchStatus]);
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['vulnerabilities', clientOrganizationId, severity, patchStatus],
+    queryKey: ['vulnerabilities', clientOrganizationId, severity, patchStatus, page, pageSize],
     queryFn: () =>
       vulnerabilityApi.getVulnerabilities({
         clientOrganizationId: clientOrganizationId!,
         severity: severity || undefined,
         patchStatus: patchStatus || undefined,
-        pageSize: 100,
+        page,
+        pageSize,
       }),
     enabled: clientOrganizationId !== null,
   });
@@ -149,6 +158,14 @@ export const VulnerabilitiesListPage: React.FC = () => {
         actions={{ add: { label: 'Add Finding', onClick: () => navigate(`/vulnerabilities/new?clientOrganizationId=${clientOrganizationId}`) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
     </div>
   );

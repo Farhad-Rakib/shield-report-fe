@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
@@ -45,11 +45,22 @@ export const RolesPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editRole, setEditRole] = useState<RoleDto | null>(null);
   const [deleteRoleId, setDeleteRoleId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: roles = [], isLoading, error, refetch } = useQuery({
     queryKey: ['roles'],
     queryFn: () => roleApi.getAll(),
   });
+
+  // GET /roles has no server-side pagination (returns the full list) — paginate client-side
+  // instead. Fine for this list: roles are hand-curated config, never expected to reach a size
+  // where slicing a small in-memory array would be a real cost.
+  const totalPages = Math.max(1, Math.ceil(roles.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+  const pagedRoles = roles.slice((page - 1) * pageSize, page * pageSize);
 
   const createMutation = useMutation({
     mutationFn: (dto: { name: string; description: string }) => roleApi.create(dto),
@@ -129,7 +140,7 @@ export const RolesPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={roles}
+        data={pagedRoles}
         isLoading={isLoading}
         error={error?.message}
         searchable
@@ -138,6 +149,14 @@ export const RolesPage: React.FC = () => {
         actions={{ add: { label: 'Add Role', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: page,
+          totalPages,
+          pageSize,
+          total: roles.length,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add New Role" size="md">

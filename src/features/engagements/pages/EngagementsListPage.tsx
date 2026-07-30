@@ -18,6 +18,8 @@ export const EngagementsListPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: orgData } = useQuery({
     queryKey: ['client-organizations-picker'],
@@ -31,6 +33,10 @@ export const EngagementsListPage: React.FC = () => {
     }
   }, [organizations, clientOrganizationId]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [clientOrganizationId]);
+
   const { data: usersData } = useQuery({
     queryKey: ['staff-users-picker'],
     queryFn: () => staffUserApi.getAll(),
@@ -38,8 +44,8 @@ export const EngagementsListPage: React.FC = () => {
   const pentesters = (usersData ?? []).filter((u) => u.roles.includes('PENTESTER'));
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['engagements', clientOrganizationId],
-    queryFn: () => engagementApi.getEngagements({ clientOrganizationId: clientOrganizationId!, pageSize: 50 }),
+    queryKey: ['engagements', clientOrganizationId, page, pageSize],
+    queryFn: () => engagementApi.getEngagements({ clientOrganizationId: clientOrganizationId!, page, pageSize }),
     enabled: clientOrganizationId !== null,
   });
   const engagements = data?.data ?? [];
@@ -138,6 +144,14 @@ export const EngagementsListPage: React.FC = () => {
         actions={{ add: { label: 'New Engagement', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="New Engagement" size="md">

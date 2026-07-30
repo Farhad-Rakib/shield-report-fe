@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Trash2 } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
@@ -45,11 +45,20 @@ export const PermissionsPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editItem, setEditItem] = useState<PermissionDto | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
   const { data: permissions = [], isLoading, error, refetch } = useQuery({
     queryKey: ['permissions'],
     queryFn: () => permissionApi.getAll(),
   });
+
+  // GET /permissions has no server-side pagination — paginate client-side over the full list.
+  const totalPages = Math.max(1, Math.ceil(permissions.length / pageSize));
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [totalPages, page]);
+  const pagedPermissions = permissions.slice((page - 1) * pageSize, page * pageSize);
 
   const createMutation = useMutation({
     mutationFn: (dto: { name: string; description: string }) => permissionApi.create(dto),
@@ -111,7 +120,7 @@ export const PermissionsPage: React.FC = () => {
 
       <DataTable
         columns={columns}
-        data={permissions}
+        data={pagedPermissions}
         isLoading={isLoading}
         error={error?.message}
         searchable
@@ -120,6 +129,14 @@ export const PermissionsPage: React.FC = () => {
         actions={{ add: { label: 'Add Permission', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: page,
+          totalPages,
+          pageSize,
+          total: permissions.length,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
 
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add New Permission" size="md">

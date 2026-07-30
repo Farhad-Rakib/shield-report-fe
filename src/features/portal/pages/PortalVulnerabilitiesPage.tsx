@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Eye, FileCheck } from 'lucide-react';
@@ -14,10 +14,16 @@ export const PortalVulnerabilitiesPage: React.FC = () => {
   const navigate = useNavigate();
   const [severity, setSeverity] = useState<Severity | ''>('');
   const [patchStatus, setPatchStatus] = useState<PatchStatus | ''>('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  useEffect(() => {
+    setPage(1);
+  }, [severity, patchStatus]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['portal-vulnerabilities', severity, patchStatus],
-    queryFn: () => vulnerabilityApi.getVulnerabilities({ severity: severity || undefined, patchStatus: patchStatus || undefined, pageSize: 100 }),
+    queryKey: ['portal-vulnerabilities', severity, patchStatus, page, pageSize],
+    queryFn: () => vulnerabilityApi.getVulnerabilities({ severity: severity || undefined, patchStatus: patchStatus || undefined, page, pageSize }),
   });
   const vulnerabilities = data?.data ?? [];
 
@@ -94,6 +100,14 @@ export const PortalVulnerabilitiesPage: React.FC = () => {
         emptyState={{ title: 'No vulnerabilities found', description: 'Findings from your engagements will show up here.' }}
         rowActions={rowActions}
         onRetry={() => refetch()}
+        pagination={{
+          currentPage: data?.page ?? page,
+          totalPages: data?.totalPages ?? 1,
+          pageSize: data?.pageSize ?? pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+        }}
       />
     </div>
   );
