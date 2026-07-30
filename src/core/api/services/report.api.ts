@@ -53,6 +53,11 @@ class ReportApi extends BaseRepository {
     return res.data;
   }
 
+  async deleteReport(id: number): Promise<void> {
+    const res = await this.delete<ApiResponse<null>>(`/reports/${id}`);
+    if (!res.success) throw new Error(res.message);
+  }
+
   // Bypasses the shared JSON-typed get<T>() — a binary download needs responseType: 'blob',
   // which isn't part of HttpRequestConfig, so this calls the underlying Axios client directly
   // (auth interceptor still applies since it's attached to `client` itself, not to get<T>()).

@@ -62,6 +62,7 @@ export const Permissions = {
   VulnerabilityReportsGenerate: 'vulnerability-reports.generate',
   VulnerabilityReportsApprove: 'vulnerability-reports.approve',
   VulnerabilityReportsDownload: 'vulnerability-reports.download',
+  VulnerabilityReportsDelete: 'vulnerability-reports.delete',
   ReportTemplatesRead: 'report-templates.read',
   ReportTemplatesCreate: 'report-templates.create',
   ReportTemplatesUpdate: 'report-templates.update',

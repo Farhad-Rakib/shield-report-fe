@@ -22,10 +22,19 @@ export const ClientOrganizationsPage: React.FC = () => {
   });
   const organizations = data?.data ?? [];
 
+  // Every other page's client-organization dropdown (Client Assets, Engagements, Vulnerabilities,
+  // Invite Users, the Dashboard filter bar) fetches under the separate ['client-organizations-
+  // picker'] key — invalidating only ['client-organizations'] left those dropdowns stale until a
+  // full reload, since React Query treats them as unrelated cache entries.
+  const invalidateOrganizations = () => {
+    queryClient.invalidateQueries({ queryKey: ['client-organizations'] });
+    queryClient.invalidateQueries({ queryKey: ['client-organizations-picker'] });
+  };
+
   const createMutation = useMutation({
     mutationFn: (dto: CreateClientOrganizationRequestDto) => clientOrganizationApi.createOrganization(dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-organizations'] });
+      invalidateOrganizations();
       toast.success('Client organization created successfully');
       setShowAddModal(false);
     },
@@ -36,7 +45,7 @@ export const ClientOrganizationsPage: React.FC = () => {
     mutationFn: ({ id, dto }: { id: number; dto: UpdateClientOrganizationRequestDto }) =>
       clientOrganizationApi.updateOrganization(id, dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-organizations'] });
+      invalidateOrganizations();
       toast.success('Client organization updated successfully');
       setEditOrg(null);
     },

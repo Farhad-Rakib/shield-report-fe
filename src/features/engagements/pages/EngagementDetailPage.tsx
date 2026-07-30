@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, UserPlus, X, Play, Bug, FileText, Download, Edit3, Eye, Check, RefreshCw } from 'lucide-react';
+import { ArrowLeft, UserPlus, X, Play, Bug, FileText, Download, Edit3, Eye, Check, RefreshCw, Trash2 } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal/Modal';
+import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
 import { ReportEditorModal } from '../../reports/components/ReportEditorModal';
 import { Loader } from '../../../components/ui/Loader/Loader';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
 import { toast } from '../../../components/ui/Toast/toast.store';
-import { EngagementStatusBadge } from '../../../components/badges/PentestBadges';
+import { EngagementStatusBadge, SeverityBadge, PatchStatusBadge } from '../../../components/badges/PentestBadges';
 import { engagementApi } from '../../../core/api/services/engagement.api';
 import { clientAssetApi } from '../../../core/api/services/client-asset.api';
 import { scanApi } from '../../../core/api/services/scan.api';
 import { staffUserApi } from '../../../core/api/services/staff-user.api';
 import { reportApi } from '../../../core/api/services/report.api';
+import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
 import { EngagementStatus } from '../../../domain/models/engagement.model';
 import { ClientAsset } from '../../../domain/models/client-asset.model';
 import { ScanTool, getScanToolLabel } from '../../../domain/models/scan.model';
@@ -73,11 +75,30 @@ export const EngagementDetailPage: React.FC = () => {
     enabled: !!engagementId,
   });
 
+  const { data: engagementScansData } = useQuery({
+    queryKey: ['scans', 'engagement', engagementId],
+    queryFn: () => scanApi.getScans({ engagementId, pageSize: 100 }),
+    enabled: !!engagementId,
+  });
+  const engagementScans = engagementScansData?.data ?? [];
+  const scanningInProgress = engagementScans.some((s) => s.status === 'Queued' || s.status === 'Running');
+  // "Scanning is done" requires at least one scan to have actually run — an engagement with no
+  // scans yet hasn't had its automated scanning phase completed at all.
+  const scanningComplete = engagementScans.length > 0 && !scanningInProgress;
+
+  const { data: engagementVulnerabilitiesData, isLoading: vulnerabilitiesLoading } = useQuery({
+    queryKey: ['vulnerabilities', 'engagement', engagementId],
+    queryFn: () => vulnerabilityApi.getVulnerabilities({ engagementId, pageSize: 100 }),
+    enabled: !!engagementId,
+  });
+  const engagementVulnerabilities = engagementVulnerabilitiesData?.data ?? [];
+
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
   const [narrativeDraft, setNarrativeDraft] = useState({ executiveSummary: '', keyFindings: '', keyRecommendations: '' });
   const [rejectingReportId, setRejectingReportId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [editingInBrowserReportId, setEditingInBrowserReportId] = useState<number | null>(null);
+  const [deletingReportId, setDeletingReportId] = useState<number | null>(null);
 
   const invalidateReports = () => queryClient.invalidateQueries({ queryKey: ['reports', engagementId] });
 
@@ -132,6 +153,16 @@ export const EngagementDetailPage: React.FC = () => {
       setRejectReason('');
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to reject report'),
+  });
+
+  const deleteReportMutation = useMutation({
+    mutationFn: (id: number) => reportApi.deleteReport(id),
+    onSuccess: () => {
+      invalidateReports();
+      toast.success('Report deleted');
+      setDeletingReportId(null);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to delete report'),
   });
 
   const downloadDraft = async (report: Report) => {
@@ -313,16 +344,52 @@ export const EngagementDetailPage: React.FC = () => {
       </div>
 
       <div>
+        <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Vulnerabilities ({engagementVulnerabilities.length})</h2>
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
+          {vulnerabilitiesLoading ? (
+            <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">Loading vulnerabilities…</p>
+          ) : engagementVulnerabilities.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">No vulnerabilities found for this engagement yet</p>
+          ) : (
+            engagementVulnerabilities.map((v) => (
+              <Link
+                key={v.id}
+                to={`/vulnerabilities/${v.id}`}
+                className="flex items-center justify-between px-4 py-3 gap-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 dark:text-white truncate">{v.title}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{v.clientAssetName ?? '—'} · {v.endpoint}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <SeverityBadge severity={v.severityOverride ?? v.severity} />
+                  <PatchStatusBadge patchStatus={v.patchStatus} />
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300">Reports ({reports.length})</h2>
           {hasPermission(Permissions.VulnerabilityReportsGenerate) && (
-            <button
-              onClick={() => generateReportMutation.mutate()}
-              disabled={generateReportMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium disabled:opacity-50"
-            >
-              <FileText className="w-3.5 h-3.5" /> Generate Report
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={() => generateReportMutation.mutate()}
+                disabled={!scanningComplete || generateReportMutation.isPending}
+                title={!scanningComplete ? 'Scanning must complete for this engagement before a report can be generated' : undefined}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FileText className="w-3.5 h-3.5" /> Generate Report
+              </button>
+              {!scanningComplete && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {scanningInProgress ? 'A scan is still running for this engagement.' : 'No scans have been run for this engagement yet.'}
+                </p>
+              )}
+            </div>
           )}
         </div>
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700">
@@ -394,6 +461,14 @@ export const EngagementDetailPage: React.FC = () => {
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
                       >
                         <Download className="w-3.5 h-3.5" /> Download PDF
+                      </button>
+                    )}
+                    {hasPermission(Permissions.VulnerabilityReportsDelete) && (
+                      <button
+                        onClick={() => setDeletingReportId(report.id)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-xs font-medium"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
                       </button>
                     )}
                   </div>
@@ -488,6 +563,16 @@ export const EngagementDetailPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={deletingReportId !== null}
+        onClose={() => setDeletingReportId(null)}
+        onConfirm={() => deletingReportId !== null && deleteReportMutation.mutate(deletingReportId)}
+        title="Delete Report"
+        message="Are you sure you want to delete this report version? Its draft and PDF files will also be removed. This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
+      />
 
       <Modal isOpen={showAssignModal} onClose={() => setShowAssignModal(false)} title="Assign Pentester" size="sm">
         <div className="space-y-4">

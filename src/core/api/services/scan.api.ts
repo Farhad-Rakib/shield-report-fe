@@ -9,7 +9,7 @@ class ScanApi extends BaseRepository {
     super('');
   }
 
-  async getScans(params?: { clientOrganizationId?: number; clientAssetId?: number; status?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Scan>> {
+  async getScans(params?: { clientOrganizationId?: number; clientAssetId?: number; engagementId?: number; status?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Scan>> {
     const res = await this.get<ApiResponse<PaginatedResponse<Scan>>>('/scans', { params });
     if (!res.success) throw new Error(res.message);
     return res.data;
