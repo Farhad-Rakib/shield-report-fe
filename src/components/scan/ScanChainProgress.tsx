@@ -59,7 +59,7 @@ export const ScanChainProgress: React.FC<ScanChainProgressProps> = ({ steps, lat
                     step.status === 'Running' ? 'text-cyan-400' : 'text-gray-300'
                   }`}
                 >
-                  {getScanToolLabel(step.tool)}
+                  {getScanToolLabel(step.tool, step.toolLabel)}
                 </span>
                 {found > 0 && (
                   <span className="px-1.5 py-0.5 rounded-full text-xs font-mono bg-amber-500/10 text-amber-400">

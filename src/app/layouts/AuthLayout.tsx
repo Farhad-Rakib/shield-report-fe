@@ -3,7 +3,8 @@ import { Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { siteSettingsApi } from '../../core/api/services/site-settings.api';
 import { useSiteSettingsStore } from '../../core/stores/site-settings.store';
-import { SecurityShowcasePanel } from '../../components/auth/SecurityShowcasePanel';
+import { AuthConsolePanel } from './components/AuthConsolePanel';
+import { BrandMark } from './components/BrandMark';
 
 export const AuthLayout: React.FC = () => {
   const { siteTitle, setSettings, settings } = useSiteSettingsStore();
@@ -27,27 +28,32 @@ export const AuthLayout: React.FC = () => {
     return s?.value || null;
   };
 
-  const title = siteTitle || getVal('site_title') || getVal('SiteTitle') || 'Admin Panel';
+  const title = siteTitle || getVal('site_title') || getVal('SiteTitle') || 'ShieldReport';
   const description = getVal('site_description') || getVal('SiteDescription') || '';
 
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-      <SecurityShowcasePanel />
+    <div className="min-h-screen flex bg-gray-50 dark:bg-gray-950">
+      <AuthConsolePanel />
 
-      <div className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              {title}
-            </h1>
-            {description && (
-              <p className="text-gray-600 dark:text-gray-400">{description}</p>
-            )}
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-sm">
+          {/* Brand is in the left panel on large screens; repeat it here for small ones. */}
+          <div className="lg:hidden mb-8 flex justify-center">
+            <BrandMark tone="auto" />
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{title}</h1>
+            {description && <p className="mt-1 text-13 text-gray-500 dark:text-gray-400">{description}</p>}
+          </div>
+
+          <div className="panel p-6 sm:p-7">
             <Outlet />
           </div>
+
+          <p className="mt-6 text-center text-2xs text-gray-400 dark:text-gray-600">
+            Protected system. Sessions are monitored and audited.
+          </p>
         </div>
       </div>
     </div>

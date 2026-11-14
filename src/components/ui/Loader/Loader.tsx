@@ -15,14 +15,14 @@ const sizeClasses = {
 export const Loader: React.FC<LoaderProps> = ({ size = 'md', text, fullscreen = false }) => {
   const content = (
     <div className="flex flex-col items-center justify-center gap-3">
-      <Loader2 className={`${sizeClasses[size]} animate-spin text-blue-600`} />
-      {text && <p className="text-sm text-gray-600 dark:text-gray-400">{text}</p>}
+      <Loader2 className={`${sizeClasses[size]} animate-spin text-brand-600 dark:text-brand-400`} />
+      {text && <p className="text-13 text-gray-500 dark:text-gray-400">{text}</p>}
     </div>
   );
 
   if (fullscreen) {
     return (
-      <div className="fixed inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-white/80 dark:bg-gray-950/80 backdrop-blur-[2px] flex items-center justify-center z-50">
         {content}
       </div>
     );
@@ -32,5 +32,5 @@ export const Loader: React.FC<LoaderProps> = ({ size = 'md', text, fullscreen = 
 };
 
 export const Skeleton: React.FC<{ className?: string }> = ({ className = '' }) => {
-  return <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className}`}></div>;
+  return <div className={`animate-pulse bg-gray-200/80 dark:bg-gray-800 rounded ${className}`}></div>;
 };

@@ -128,12 +128,12 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
           <div
             className={`${sizeClasses[previewSize]} ${shapeClasses} border-2 border-dashed flex items-center justify-center transition-colors ${
               isDragging
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10'
                 : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50'
             }`}
           >
             {isUploading ? (
-              <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+              <Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
             ) : (
               <ImageIcon className="w-6 h-6 text-gray-400" />
             )}
@@ -150,21 +150,21 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
           <div
             className={`relative border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer ${
               isDragging
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500 bg-gray-50 dark:bg-gray-800/50 hover:bg-blue-50 dark:hover:bg-blue-900/10'
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10'
+                : 'border-gray-300 dark:border-gray-700 hover:border-brand-400 dark:hover:border-brand-500 bg-gray-50 dark:bg-gray-900/50 hover:bg-brand-50/50 dark:hover:bg-brand-500/5'
             }`}
             onClick={() => fileInputRef.current?.click()}
           >
             {isUploading ? (
               <div className="flex flex-col items-center gap-2 py-2">
-                <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
+                <Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
                 <span className="text-sm text-gray-500 dark:text-gray-400">Uploading...</span>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2 py-2">
                 <Upload className="w-6 h-6 text-gray-400" />
                 <div>
-                  <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Click to upload</span>
+                  <span className="text-sm font-medium text-brand-700 dark:text-brand-400">Click to upload</span>
                   <span className="text-sm text-gray-500 dark:text-gray-400"> or drag and drop</span>
                 </div>
                 <span className="text-xs text-gray-400 dark:text-gray-500">

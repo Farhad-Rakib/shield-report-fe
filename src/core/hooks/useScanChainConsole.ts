@@ -4,7 +4,7 @@ import { AppConfig } from '../config/app.config';
 import { useAuthStore } from '../../features/auth/store/auth.store';
 import { scanApi } from '../api/services/scan.api';
 import { Scan, ScanStatus, getScanToolLabel } from '../../domain/models/scan.model';
-import { ChainStep, ConsoleEntry, useScanConsoleStore } from '../stores/scan-console.store';
+import { ChainStep, ConsoleEntry, MAX_CONSOLE_ENTRIES, appendEntries, useScanConsoleStore } from '../stores/scan-console.store';
 
 export type { ChainStep, ConsoleEntry, ScanProgress } from '../stores/scan-console.store';
 
@@ -44,6 +44,9 @@ const TERMINAL_STATUSES: ScanStatus[] = ['Completed', 'Failed', 'Cancelled'];
 // Matches Scan's declared chain length (Naabu -> Nuclei -> Reconftw) with headroom — just a
 // sanity cap so a data bug (e.g. an accidental cycle) can't spin this into an infinite walk.
 const MAX_CHAIN_HOPS = 10;
+
+// How often buffered live-console lines are applied to the store (ms).
+const FLUSH_INTERVAL_MS = 250;
 
 // The hub lives outside /api/v1 (it's mapped at /hubs/notifications in Program.cs), so the
 // REST API base URL isn't reusable as-is — strip the /api/vN suffix to get the hub's host.
@@ -89,7 +92,7 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       // wait forever: it's terminal, so no more events will ever arrive for it, and nothing
       // would trigger the handoff to the next step. So skip forward to the first non-terminal
       // step, concatenating each skipped step's persisted rawOutput into the initial entries.
-      const resolved: ChainStep[] = [{ id: rootScan.id, publicId: rootScan.publicId, tool: rootScan.tool, status: rootScan.status }];
+      const resolved: ChainStep[] = [{ id: rootScan.id, publicId: rootScan.publicId, tool: rootScan.tool, toolLabel: rootScan.toolLabel, status: rootScan.status }];
       const seeded: ConsoleEntry[] = [];
       let startPublicId = rootScan.publicId;
       let foundStart = !TERMINAL_STATUSES.includes(rootScan.status);
@@ -109,13 +112,13 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       while (cursor && hops < MAX_CHAIN_HOPS) {
         try {
           const next = await scanApi.getScanByPublicId(cursor);
-          resolved.push({ id: next.id, publicId: next.publicId, tool: next.tool, status: next.status });
+          resolved.push({ id: next.id, publicId: next.publicId, tool: next.tool, toolLabel: next.toolLabel, status: next.status });
 
           if (!foundStart) {
             if (TERMINAL_STATUSES.includes(next.status)) {
               if (next.rawOutput) {
                 seeded.push(
-                  { kind: 'status', text: `${getScanToolLabel(next.tool)} ${next.status.toLowerCase()}` },
+                  { kind: 'status', text: `${getScanToolLabel(next.tool, next.toolLabel)} ${next.status.toLowerCase()}` },
                   ...next.rawOutput.split('\n').filter((line) => line.length > 0).map((text): ConsoleEntry => ({ kind: 'raw', text, stream: 'stdout' }))
                 );
               }
@@ -134,9 +137,13 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
 
       if (cancelled) return;
 
+      // Finished steps' saved output can be very large (reconftw logs): keep only the tail.
+      const seededTail = seeded.slice(-MAX_CONSOLE_ENTRIES);
       initSession(rootScan.publicId, {
         steps: resolved,
-        entries: seeded,
+        entries: seededTail,
+        entryOffset: seeded.length - seededTail.length,
+        findings: [],
         // foundStart stays false only when every step in the chain is already terminal — in
         // that case fall through to the last step so the console at least shows its final output.
         activePublicId: foundStart ? startPublicId : resolved[resolved.length - 1].publicId,
@@ -171,30 +178,48 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       .withAutomaticReconnect()
       .build();
 
+    // Lines arrive far faster than React should re-render (thousands per minute from nuclei /
+    // reconftw). Buffer them and apply one store update per FLUSH_INTERVAL_MS; updating per line
+    // copied the whole history every time and froze the app.
+    let buffer: ConsoleEntry[] = [];
+    let bufferedFindings = 0;
+    let bufferedPhase: string | null = null;
+    const flush = () => {
+      if (buffer.length === 0 && bufferedPhase === null) return;
+      const batch = buffer;
+      const findingsInBatch = bufferedFindings;
+      const phase = bufferedPhase;
+      buffer = [];
+      bufferedFindings = 0;
+      bufferedPhase = null;
+      updateSession(rootPublicId, (prev) => {
+        const next = appendEntries(prev, batch);
+        return {
+          ...next,
+          latestPhase: phase ?? next.latestPhase,
+          findingCounts: findingsInBatch > 0
+            ? { ...next.findingCounts, [activePublicId]: (next.findingCounts[activePublicId] ?? 0) + findingsInBatch }
+            : next.findingCounts,
+        };
+      });
+    };
+    const flushTimer = window.setInterval(flush, FLUSH_INTERVAL_MS);
+
     connection.on('ScanOutput', (event: ScanOutputEvent) => {
       if (cancelled || event.scanPublicId !== activePublicId) return;
-      updateSession(rootPublicId, (prev) => ({
-        ...prev,
-        entries: [...prev.entries, { kind: 'raw', text: event.line, stream: event.stream }],
-      }));
+      buffer.push({ kind: 'raw', text: event.line, stream: event.stream });
     });
 
     connection.on('ScanPhase', (event: ScanPhaseEvent) => {
       if (cancelled || event.scanPublicId !== activePublicId) return;
-      updateSession(rootPublicId, (prev) => ({
-        ...prev,
-        entries: [...prev.entries, { kind: 'status', text: event.message }],
-        latestPhase: event.message,
-      }));
+      buffer.push({ kind: 'status', text: event.message });
+      bufferedPhase = event.message;
     });
 
     connection.on('ScanFinding', (event: ScanFindingEvent) => {
       if (cancelled || event.scanPublicId !== activePublicId) return;
-      updateSession(rootPublicId, (prev) => ({
-        ...prev,
-        entries: [...prev.entries, { kind: 'finding', title: event.title, severity: event.severity, endpoint: event.endpoint }],
-        findingCounts: { ...prev.findingCounts, [activePublicId]: (prev.findingCounts[activePublicId] ?? 0) + 1 },
-      }));
+      buffer.push({ kind: 'finding', title: event.title, severity: event.severity, endpoint: event.endpoint });
+      bufferedFindings += 1;
     });
 
     connection.on('ScanProgress', (event: ScanProgressEvent) => {
@@ -205,11 +230,12 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
       }));
     });
 
-    connection.on('ScanStatusChanged', (event: ScanStatusEvent) => {
-      if (cancelled || event.scanPublicId !== activePublicId) return;
-      const status = event.status as ScanStatus;
+    const applyStatus = (status: ScanStatus) => {
+      flush(); // keep buffered output ahead of the status transition
 
       updateSession(rootPublicId, (prev) => {
+        // Idempotent: the same status can arrive both as an event and from the resync below.
+        if (prev.steps.find((s) => s.publicId === activePublicId)?.status === status) return prev;
         const steps = prev.steps.map((s) => (s.publicId === activePublicId ? { ...s, status } : s));
         if (!TERMINAL_STATUSES.includes(status)) {
           return { ...prev, steps };
@@ -222,21 +248,38 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
         }
 
         // A new step is starting, so the last-known percent no longer applies to it.
-        const message = `${getScanToolLabel(steps[idx].tool)} ${status.toLowerCase()}, starting ${getScanToolLabel(next.tool)}`;
+        const message = `${getScanToolLabel(steps[idx].tool, steps[idx].toolLabel)} ${status.toLowerCase()}, starting ${getScanToolLabel(next.tool, next.toolLabel)}`;
         return {
-          ...prev,
+          ...appendEntries(prev, [{ kind: 'status', text: message }]),
           steps,
-          entries: [...prev.entries, { kind: 'status', text: message }],
           latestPhase: message,
           activePublicId: next.publicId,
           progress: null,
         };
       });
+    };
+
+    connection.on('ScanStatusChanged', (event: ScanStatusEvent) => {
+      if (cancelled || event.scanPublicId !== activePublicId) return;
+      applyStatus(event.status as ScanStatus);
+    });
+
+    // Group events are not replayed: a status change between loading the scan and joining its
+    // group (a queued scan usually starts within a second) was lost, leaving the page on "Queued"
+    // while output streamed. After every join, read the status once and apply it.
+    const joinAndResync = async () => {
+      await connection.invoke('JoinScanGroup', activePublicId);
+      const latest = await scanApi.getScanByPublicId(activePublicId);
+      if (!cancelled) applyStatus(latest.status);
+    };
+    // A reconnect gets a new connection id, which is in no group: join again.
+    connection.onreconnected(() => {
+      joinAndResync().catch(() => undefined);
     });
 
     connection
       .start()
-      .then(() => connection.invoke('JoinScanGroup', activePublicId))
+      .then(joinAndResync)
       .catch((err) => {
         if (!cancelled) {
           setConnectionError(err?.message || 'Failed to connect to the live console.');
@@ -245,6 +288,8 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
 
     return () => {
       cancelled = true;
+      window.clearInterval(flushTimer);
+      flush();
       connection.invoke('LeaveScanGroup', activePublicId).catch(() => undefined);
       connection.stop();
     };
@@ -252,6 +297,8 @@ export function useScanChainConsole(rootScan: Scan | null | undefined) {
 
   return {
     entries: session?.entries ?? [],
+    entryOffset: session?.entryOffset ?? 0,
+    liveFindings: session?.findings ?? [],
     steps: session?.steps ?? [],
     activePublicId,
     connectionError,

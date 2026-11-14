@@ -66,27 +66,28 @@ export const FormDrawer: React.FC<FormDrawerProps> = ({
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] transition-opacity"
+          className="fixed inset-0 bg-gray-950/60 backdrop-blur-[2px] z-[60] animate-overlay-in"
           onClick={onClose}
         />
       )}
 
       <div
         ref={drawerRef}
-        className={`fixed top-0 bottom-0 z-[70] ${sizeClasses[size]} max-w-[90vw] bg-white dark:bg-gray-800 shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${positionClasses}`}
+        className={`fixed top-0 bottom-0 z-[70] ${sizeClasses[size]} max-w-[90vw] bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 ${position === 'right' ? 'border-l' : 'border-r'} shadow-overlay flex flex-col transform transition-transform duration-300 ease-in-out ${positionClasses}`}
       >
-        <div className="flex items-start justify-between p-5 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-200 dark:border-gray-800">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{title}</h3>
             {description && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{description}</p>
+              <p className="text-13 text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            aria-label="Close (Esc)"
+            className="btn-icon -mr-1.5 h-7 w-7"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 

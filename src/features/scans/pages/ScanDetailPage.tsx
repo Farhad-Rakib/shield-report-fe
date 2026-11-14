@@ -31,8 +31,7 @@ export const ScanDetailPage: React.FC = () => {
     enabled: !!publicId,
   });
 
-  const { entries, steps, connectionError, latestPhase, findingCounts, progress, activePublicId } = useScanChainConsole(scan);
-  const liveFindings = entries.filter((e): e is Extract<typeof entries[number], { kind: 'finding' }> => e.kind === 'finding');
+  const { entries, entryOffset, liveFindings, steps, connectionError, latestPhase, findingCounts, progress, activePublicId } = useScanChainConsole(scan);
 
   // The whole chain is done once its last known step reaches a terminal state — individual
   // steps' own statuses drive ScanChainProgress's icons/spinner, this is just "is there
@@ -85,7 +84,7 @@ export const ScanDetailPage: React.FC = () => {
         </Link>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white font-mono">
-            {steps.length > 1 ? 'Scan Chain' : `${getScanToolLabel(scan.tool)} Scan`}
+            {steps.length > 1 ? 'Scan Chain' : `${getScanToolLabel(scan.tool, scan.toolLabel)} Scan`}
           </h1>
           {overallStatus && <ScanStatusBadge status={overallStatus} />}
           {canStop && (
@@ -116,7 +115,7 @@ export const ScanDetailPage: React.FC = () => {
 
       <div>
         <h2 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Live Output</h2>
-        <ScanConsolePane entries={entries} activeTool={runningStep ? getScanToolLabel(runningStep.tool) : undefined} live={!!runningStep} />
+        <ScanConsolePane entries={entries} entryOffset={entryOffset} activeTool={runningStep ? getScanToolLabel(runningStep.tool, runningStep.toolLabel) : undefined} live={!!runningStep} />
       </div>
 
       <ConfirmDialog

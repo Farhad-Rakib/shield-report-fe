@@ -1,4 +1,4 @@
-import { EngagementStatus, EngagementTaskStatus } from '../models/engagement.model';
+import { TestingType, EngagementStatus, EngagementTaskStatus } from '../models/engagement.model';
 
 export interface CreateEngagementRequestDto {
   clientOrganizationId: number;
@@ -7,6 +7,7 @@ export interface CreateEngagementRequestDto {
   scope?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  testingType?: TestingType;
 }
 
 export interface UpdateEngagementRequestDto {
@@ -15,6 +16,7 @@ export interface UpdateEngagementRequestDto {
   startDate?: string | null;
   endDate?: string | null;
   status?: EngagementStatus | null;
+  testingType?: TestingType | null;
 }
 
 export interface AssignEngagementUserRequestDto {

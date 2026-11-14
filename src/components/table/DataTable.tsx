@@ -93,12 +93,12 @@ export function DataTable<T extends Record<string, any>>({
 
   const getSortIcon = (columnKey: keyof T | string) => {
     if (sortConfig.key !== columnKey) {
-      return <ChevronsUpDown className="w-4 h-4 text-gray-400" />;
+      return <ChevronsUpDown className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600" />;
     }
     return sortConfig.order === 'asc' ? (
-      <ChevronUp className="w-4 h-4 text-blue-600" />
+      <ChevronUp className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
     ) : (
-      <ChevronDown className="w-4 h-4 text-blue-600" />
+      <ChevronDown className="w-3.5 h-3.5 text-brand-600 dark:text-brand-400" />
     );
   };
 
@@ -107,10 +107,10 @@ export function DataTable<T extends Record<string, any>>({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
         {searchable && (
-          <div className="flex-1 max-w-md">
+          <div className="flex-1 max-w-sm">
             {searchOptions ? (
               <Autocomplete
                 options={searchOptions}
@@ -122,13 +122,13 @@ export function DataTable<T extends Record<string, any>>({
               />
             ) : (
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder={searchPlaceholder}
                   value={searchTerm}
                   onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="input pl-8"
                 />
               </div>
             )}
@@ -138,7 +138,7 @@ export function DataTable<T extends Record<string, any>>({
         {actions?.add && (
           <button
             onClick={actions.add.onClick}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="btn-primary"
           >
             <Plus className="w-4 h-4" />
             {actions.add.label}
@@ -146,17 +146,17 @@ export function DataTable<T extends Record<string, any>>({
         )}
       </div>
 
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <div className="panel overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <table className="w-full text-13">
+            <thead className="bg-gray-50/80 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
               <tr>
                 {columns.map((column) => (
                   <th
                     key={String(column.key)}
-                    className={`px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
+                    className={`table-th whitespace-nowrap ${
                       column.sortable !== false && sortable
-                        ? 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700'
+                        ? 'cursor-pointer select-none hover:text-gray-900 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-800/70'
                         : ''
                     }`}
                     style={{ width: column.width }}
@@ -164,20 +164,20 @@ export function DataTable<T extends Record<string, any>>({
                       column.sortable !== false && sortable && handleSort(column.key as keyof T)
                     }
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {column.label}
                       {column.sortable !== false && sortable && getSortIcon(column.key)}
                     </div>
                   </th>
                 ))}
                 {rowActions && rowActions.length > 0 && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="table-th text-right w-px whitespace-nowrap">
                     Actions
                   </th>
                 )}
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+            <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
               {isLoading ? (
                 <tr>
                   <td colSpan={columns.length + (rowActions && rowActions.length > 0 ? 1 : 0)}>
@@ -197,12 +197,12 @@ export function DataTable<T extends Record<string, any>>({
                 data.map((row, rowIndex) => (
                   <tr
                     key={rowIndex}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                   >
                     {columns.map((column) => (
                       <td
                         key={String(column.key)}
-                        className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100"
+                        className="table-td"
                       >
                         {column.render
                           ? column.render(row[column.key as keyof T], row)
@@ -210,24 +210,25 @@ export function DataTable<T extends Record<string, any>>({
                       </td>
                     ))}
                     {rowActions && rowActions.length > 0 && (
-                      <td className="px-6 py-4 text-sm">
-                        <div className="flex items-center gap-2">
+                      <td className="px-3 py-1.5 text-right">
+                        <div className="flex items-center justify-end gap-0.5">
                           {rowActions
                             .filter((action) => !action.show || action.show(row))
                             .map((action, idx) => {
                               const Icon = action.icon;
                               const variantStyles = {
-                                primary: 'text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20',
-                                secondary: 'text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800',
-                                danger: 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20',
-                                success: 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20',
-                                warning: 'text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/20',
+                                primary: 'text-brand-700 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10',
+                                secondary: 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800',
+                                danger: 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10',
+                                success: 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10',
+                                warning: 'text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-500/10',
                               };
                               return (
                                 <button
                                   key={idx}
                                   onClick={() => action.onClick(row)}
-                                  className={`p-2 rounded transition-colors ${
+                                  aria-label={action.label}
+                                  className={`p-1.5 rounded-md transition-colors ${
                                     variantStyles[action.variant || 'secondary']
                                   }`}
                                   title={action.label}
@@ -248,13 +249,13 @@ export function DataTable<T extends Record<string, any>>({
       </div>
 
       {pagination && data.length > 0 && (
-        <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 panel">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-700 dark:text-gray-300">Rows per page:</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Rows per page</span>
             <select
               value={pagination.pageSize}
               onChange={(e) => pagination.onPageSizeChange(Number(e.target.value))}
-              className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="input h-7 w-auto py-0 pl-2 pr-7 text-xs"
             >
               <option value={5}>5</option>
               <option value={10}>10</option>
@@ -265,21 +266,21 @@ export function DataTable<T extends Record<string, any>>({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-700 dark:text-gray-300">
-              Page {pagination.currentPage} of {pagination.totalPages} ({pagination.total} total)
+            <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+              Page <span className="font-medium text-gray-900 dark:text-gray-100">{pagination.currentPage}</span> of {pagination.totalPages} · {pagination.total} total
             </span>
             <div className="flex gap-1">
               <button
                 onClick={() => pagination.onPageChange(pagination.currentPage - 1)}
                 disabled={pagination.currentPage === 1}
-                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="btn-secondary btn-sm"
               >
                 Previous
               </button>
               <button
                 onClick={() => pagination.onPageChange(pagination.currentPage + 1)}
                 disabled={pagination.currentPage === pagination.totalPages}
-                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="btn-secondary btn-sm"
               >
                 Next
               </button>

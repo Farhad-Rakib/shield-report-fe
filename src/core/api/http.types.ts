@@ -5,6 +5,8 @@ export interface HttpRequestConfig {
   contentType?: ContentType;
   params?: Record<string, any>;
   headers?: Record<string, string>;
+  // Per-request override of AppConfig.api.timeout (ms), for calls known to be slow.
+  timeout?: number;
 }
 
 export interface PaginatedRequest {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Briefcase, Server, Bug, Radar, LogOut, Menu, X, Sun, Moon, ShieldCheck } from 'lucide-react';
+import { Briefcase, Server, Bug, Radar, LogOut, Menu, X, Sun, Moon, ShieldCheck, FileText } from 'lucide-react';
 import { useAuthStore } from '../../features/auth/store/auth.store';
 import { useThemeStore } from '../../core/stores/theme.store';
 import { engagementApi } from '../../core/api/services/engagement.api';
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { label: 'Assets', href: '/portal/assets', icon: Server },
   { label: 'Vulnerabilities', href: '/portal/vulnerabilities', icon: Bug },
   { label: 'Scans', href: '/portal/scans', icon: Radar },
+  { label: 'Reports', href: '/portal/reports', icon: FileText },
 ];
 
 export const PortalShellLayout: React.FC = () => {
@@ -37,42 +38,46 @@ export const PortalShellLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col">
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-30">
-        <div className="flex items-center justify-between h-16 px-4">
-          <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 flex flex-col">
+      <header className="h-14 shrink-0 bg-console border-b border-console-border sticky top-0 z-30">
+        <div className="flex items-center justify-between h-full px-4">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setIsOpen(true)}
-              className="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              aria-label="Open navigation"
+              className="lg:hidden p-1.5 -ml-1 rounded-md text-gray-400 hover:text-white hover:bg-console-raised"
             >
-              <Menu className="w-6 h-6" />
+              <Menu className="w-5 h-5" />
             </button>
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-600 shrink-0">
-              <ShieldCheck className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-md flex items-center justify-center bg-gradient-to-br from-brand-400 to-brand-600 ring-1 ring-inset ring-white/20 shrink-0">
+              <ShieldCheck className="w-[18px] h-[18px] text-gray-950" strokeWidth={2.25} />
             </div>
-            <div>
-              <h1 className="text-sm font-bold text-gray-900 dark:text-white leading-tight">{orgName}</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">Client Portal</p>
+            <div className="min-w-0 leading-tight">
+              <h1 className="text-sm font-semibold text-white truncate">{orgName}</h1>
+              <p className="text-2xs font-mono uppercase tracking-[0.14em] text-brand-400">Client Portal</p>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-400 hover:text-white hover:bg-console-raised transition-colors"
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <div className="hidden sm:block text-right ml-2 mr-1">
-              <p className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</p>
+            <div className="hidden sm:block w-px h-5 bg-console-border mx-1.5" aria-hidden="true" />
+            <div className="hidden sm:block text-right mr-1">
+              <p className="text-13 font-medium text-gray-200 max-w-[14rem] truncate">{displayName}</p>
             </div>
             <button
               onClick={handleLogout}
-              className="p-2 rounded-lg text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="w-8 h-8 inline-flex items-center justify-center rounded-md text-gray-400 hover:text-red-400 hover:bg-console-raised transition-colors"
               title="Logout"
+              aria-label="Logout"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -80,42 +85,64 @@ export const PortalShellLayout: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {isOpen && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden" onClick={() => setIsOpen(false)} />
+          <div className="fixed inset-0 bg-gray-950/60 backdrop-blur-[2px] z-40 lg:hidden" onClick={() => setIsOpen(false)} />
         )}
 
         <aside
-          className={`fixed lg:static inset-y-0 left-0 top-16 lg:top-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
+          className={`fixed lg:static inset-y-0 left-0 top-14 lg:top-0 z-50 w-60 transform transition-transform duration-200 ease-out ${
             isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-          } flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800`}
+          } flex flex-col bg-console border-r border-console-border`}
+          aria-label="Portal navigation"
         >
-          <div className="flex items-center justify-end p-3 lg:hidden">
-            <button onClick={() => setIsOpen(false)} className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+          <div className="flex items-center justify-end p-2 lg:hidden">
+            <button
+              onClick={() => setIsOpen(false)}
+              aria-label="Close navigation"
+              className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-console-raised"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
-          <nav className="flex-1 p-3 space-y-1">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.href}
-                to={item.href}
-                onClick={() => setIsOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                  }`
-                }
-              >
-                <item.icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
+          <nav className="flex-1 px-3 py-3">
+            <p className="px-2.5 mb-1 h-6 flex items-center text-2xs font-semibold uppercase tracking-[0.1em] text-gray-500">
+              Security posture
+            </p>
+            <div className="space-y-0.5">
+              {NAV_ITEMS.map((item) => (
+                <NavLink
+                  key={item.href}
+                  to={item.href}
+                  onClick={() => setIsOpen(false)}
+                  className={({ isActive }) =>
+                    `group relative flex items-center gap-2.5 h-8 px-2.5 text-13 font-medium rounded-md transition-colors ${
+                      isActive
+                        ? 'bg-console-hover text-white'
+                        : 'text-console-muted hover:bg-console-raised hover:text-gray-100'
+                    }`
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      {isActive && (
+                        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-brand-400" aria-hidden="true" />
+                      )}
+                      <item.icon
+                        className={`w-4 h-4 shrink-0 ${isActive ? 'text-brand-400' : 'text-gray-500 group-hover:text-gray-300'}`}
+                      />
+                      <span>{item.label}</span>
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           </nav>
+          <div className="shrink-0 border-t border-console-border px-4 py-3 text-2xs text-gray-500">
+            Powered by <span className="text-gray-300 font-medium">ShieldReport</span>
+          </div>
         </aside>
 
         <main className="flex-1 overflow-y-auto">
-          <div className="container mx-auto px-4 py-6">
+          <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 py-5">
             <Outlet />
           </div>
         </main>

@@ -26,18 +26,6 @@ class ClientAssetApi extends BaseRepository {
     if (!res.success) throw new Error(res.message);
     return res.data;
   }
-
-  async authorizeForScanning(assetId: number): Promise<ClientAsset> {
-    const res = await this.post<ApiResponse<ClientAsset>>(`/assets/${assetId}/authorize-for-scanning`);
-    if (!res.success) throw new Error(res.message);
-    return res.data;
-  }
-
-  async revokeScanAuthorization(assetId: number): Promise<ClientAsset> {
-    const res = await this.post<ApiResponse<ClientAsset>>(`/assets/${assetId}/revoke-scan-authorization`);
-    if (!res.success) throw new Error(res.message);
-    return res.data;
-  }
 }
 
 export const clientAssetApi = new ClientAssetApi();

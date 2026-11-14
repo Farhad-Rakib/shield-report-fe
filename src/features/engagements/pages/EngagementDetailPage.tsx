@@ -1,10 +1,12 @@
+import { SendReportModal } from '../../reports/components/SendReportModal';
+import { GenerateReportModal } from '../../reports/components/GenerateReportModal';
+import { scanToolApi } from '../../../core/api/services/scan-tool.api';
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, UserPlus, X, Play, Bug, FileText, Download, Edit3, Eye, Check, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, UserPlus, X, Play, Bug, FileText, Download, Eye, Check, RefreshCw, Trash2, Mail, Sparkles } from 'lucide-react';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
-import { ReportEditorModal } from '../../reports/components/ReportEditorModal';
 import { Loader } from '../../../components/ui/Loader/Loader';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
 import { toast } from '../../../components/ui/Toast/toast.store';
@@ -15,7 +17,7 @@ import { scanApi } from '../../../core/api/services/scan.api';
 import { staffUserApi } from '../../../core/api/services/staff-user.api';
 import { reportApi } from '../../../core/api/services/report.api';
 import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
-import { EngagementStatus } from '../../../domain/models/engagement.model';
+import { EngagementStatus, TestingType, TESTING_TYPE_LABELS } from '../../../domain/models/engagement.model';
 import { ClientAsset } from '../../../domain/models/client-asset.model';
 import { ScanTool, getScanToolLabel } from '../../../domain/models/scan.model';
 import { Report } from '../../../domain/models/report.model';
@@ -23,16 +25,20 @@ import { useAuthStore } from '../../auth/store/auth.store';
 import { Permissions } from '../../../core/constants/permissions';
 
 const STATUS_OPTIONS: EngagementStatus[] = ['Scheduled', 'InProgress', 'InReview', 'Completed'];
-const SCAN_TOOLS: ScanTool[] = ['Naabu', 'Nuclei', 'Reconftw'];
 
-// Opens the file in a new tab instead of forcing a save-to-disk download — the browser's own
-// viewer (native for PDF; whatever the OS/browser has registered for .docx) takes it from there.
-// Revocation is delayed rather than immediate: the new tab needs time to actually load the blob
-// URL before it's invalidated.
-function openBlobInNewTab(blob: Blob) {
+// Saves the file under the server's file name. (Opening the blob in a new tab instead gave the
+// file a random name, .docx tabs saved without an extension, and Chrome's popup blocker dropped the
+// window.open once fetching a large file outlived the click's user activation.) The report can be
+// read in the browser with Preview.
+function saveBlob(blob: Blob, fileName: string) {
   const url = window.URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => window.URL.revokeObjectURL(url), 10_000);
 }
 
 export const EngagementDetailPage: React.FC = () => {
@@ -46,7 +52,10 @@ export const EngagementDetailPage: React.FC = () => {
   const [assignIsLead, setAssignIsLead] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
   const [scanAssetId, setScanAssetId] = useState('');
-  const [selectedTools, setSelectedTools] = useState<ScanTool[]>([]);
+  // Keys: built-in tool name, or "Custom:<id>" for a registered custom tool.
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  // Only enabled tools (Configuration → Scan Tools) are offered.
+  const { data: availableTools = [] } = useQuery({ queryKey: ['scan-tools-available'], queryFn: () => scanToolApi.available() });
 
   const { data: engagement, isLoading, error, refetch } = useQuery({
     queryKey: ['engagement', engagementId],
@@ -73,6 +82,8 @@ export const EngagementDetailPage: React.FC = () => {
     queryKey: ['reports', engagementId],
     queryFn: () => reportApi.listForEngagement(engagementId),
     enabled: !!engagementId,
+    // Poll while an AI draft is being written in the background.
+    refetchInterval: (query) => ((query.state.data ?? []).some((r) => r.narrativeStatus === 'Drafting') ? 4000 : false),
   });
 
   const { data: engagementScansData } = useQuery({
@@ -94,33 +105,55 @@ export const EngagementDetailPage: React.FC = () => {
   const engagementVulnerabilities = engagementVulnerabilitiesData?.data ?? [];
 
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
-  const [narrativeDraft, setNarrativeDraft] = useState({ executiveSummary: '', keyFindings: '', keyRecommendations: '' });
+  const [narrativeDraft, setNarrativeDraft] = useState({
+    executiveSummary: '',
+    keyFindings: '',
+    keyRecommendations: '',
+    projectGoals: '',
+    limitations: '',
+    showToolNames: false,
+    scopeStatuses: {} as Record<string, string>,
+    customFieldValues: {} as Record<string, string>,
+  });
+  const [editingFields, setEditingFields] = useState<NonNullable<Report['customFields']>>([]);
+  const [editingIsHtml, setEditingIsHtml] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [sendingReport, setSendingReport] = useState<Report | null>(null);
   const [rejectingReportId, setRejectingReportId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [editingInBrowserReportId, setEditingInBrowserReportId] = useState<number | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<number | null>(null);
 
   const invalidateReports = () => queryClient.invalidateQueries({ queryKey: ['reports', engagementId] });
 
-  const generateReportMutation = useMutation({
-    mutationFn: () => reportApi.generate(engagementId),
+  const [generateOpen, setGenerateOpen] = useState(false);
+
+  const draftNarrativeMutation = useMutation({
+    mutationFn: (id: number) => reportApi.draftNarrative(id),
     onSuccess: () => {
       invalidateReports();
-      toast.success('Report generated — review the draft narrative before approving');
+      toast.success('AI drafting started. The report updates when it is done');
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to generate report'),
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to start AI drafting'),
   });
 
   const updateNarrativeMutation = useMutation({
     // Edits happen only inside the app — saving re-fills the stored .docx draft immediately so
     // the pentester's edits are reflected without any upload/download round-trip through Word.
     mutationFn: async () => {
-      await reportApi.updateNarrative(editingReportId!, narrativeDraft);
+      const { executiveSummary, keyFindings, keyRecommendations, projectGoals, limitations, showToolNames, scopeStatuses, customFieldValues } = narrativeDraft;
+      const missingRequired = editingFields.filter((f) => f.required && !(customFieldValues[f.key] ?? '').trim() && !(f.defaultValue ?? '').trim());
+      if (missingRequired.length > 0) {
+        throw new Error(`Fill in the required field(s): ${missingRequired.map((f) => f.label).join(', ')}`);
+      }
+      await reportApi.updateNarrative(editingReportId!, { executiveSummary, keyFindings, keyRecommendations });
+      if (editingIsHtml) {
+        await reportApi.updateSections(editingReportId!, { projectGoals, limitations, showToolNames, scopeStatuses, customFieldValues });
+      }
       return reportApi.regenerate(editingReportId!);
     },
     onSuccess: () => {
       invalidateReports();
-      toast.success('Narrative saved and draft regenerated');
+      toast.success('Report sections saved — PDF and Word regenerated');
       setEditingReportId(null);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to save narrative'),
@@ -167,26 +200,61 @@ export const EngagementDetailPage: React.FC = () => {
 
   const downloadDraft = async (report: Report) => {
     try {
-      const blob = await reportApi.downloadDraft(report.id);
-      openBlobInNewTab(blob);
+      const { blob, fileName } = await reportApi.downloadDraft(report.id);
+      saveBlob(blob, fileName);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || err.message || 'Failed to open draft');
+      toast.error(err?.response?.data?.message || err.message || 'Failed to download the Word file');
     }
   };
 
   const downloadPdf = async (report: Report) => {
     try {
-      const blob = await reportApi.downloadPdf(report.id);
-      openBlobInNewTab(blob);
+      const { blob, fileName } = await reportApi.downloadPdf(report.id);
+      saveBlob(blob, fileName);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || err.message || 'Failed to open PDF');
+      toast.error(err?.response?.data?.message || err.message || 'Failed to download the PDF');
     }
   };
 
   const openNarrativeEditor = (report: Report) => {
     setEditingReportId(report.id);
-    setNarrativeDraft({ executiveSummary: report.executiveSummary, keyFindings: report.keyFindings, keyRecommendations: report.keyRecommendations });
+    setEditingIsHtml(report.hasHtmlPreview);
+    setNarrativeDraft({
+      executiveSummary: report.executiveSummary,
+      keyFindings: report.keyFindings,
+      keyRecommendations: report.keyRecommendations,
+      projectGoals: report.projectGoals,
+      limitations: report.limitations,
+      showToolNames: report.showToolNames,
+      scopeStatuses: { ...report.scopeStatuses },
+      customFieldValues: { ...(report.customFieldValues ?? {}) },
+    });
+    setEditingFields(report.customFields ?? []);
   };
+
+  const openPreview = async (report: Report) => {
+    try {
+      setPreviewHtml(await reportApi.preview(report.id));
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to load preview');
+    }
+  };
+
+  const testingTypeMutation = useMutation({
+    mutationFn: (testingType: TestingType) =>
+      engagementApi.updateEngagement(engagementId, {
+        title: engagement!.title,
+        scope: engagement!.scope,
+        startDate: engagement!.startDate,
+        endDate: engagement!.endDate,
+        testingType,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['engagement', engagementId] });
+      toast.success('Testing type updated — applies to reports generated from now on');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to update testing type'),
+  });
 
   const statusMutation = useMutation({
     mutationFn: (status: EngagementStatus) =>
@@ -226,7 +294,12 @@ export const EngagementDetailPage: React.FC = () => {
   });
 
   const createScanMutation = useMutation({
-    mutationFn: () => scanApi.createScan(Number(scanAssetId), { tools: selectedTools, engagementId }),
+    mutationFn: () =>
+      scanApi.createScan(Number(scanAssetId), {
+        tools: selectedTools.filter((k) => !k.startsWith('Custom:')) as ScanTool[],
+        customToolIds: selectedTools.filter((k) => k.startsWith('Custom:')).map((k) => Number(k.slice(7))),
+        engagementId,
+      }),
     onSuccess: (scans) => {
       toast.success(`Scan started with ${scans.length} tool${scans.length === 1 ? '' : 's'}`);
       setShowScanModal(false);
@@ -242,7 +315,7 @@ export const EngagementDetailPage: React.FC = () => {
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to start scan'),
   });
 
-  const toggleTool = (tool: ScanTool) => {
+  const toggleTool = (tool: string) => {
     setSelectedTools((prev) => (prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool]));
   };
 
@@ -262,7 +335,7 @@ export const EngagementDetailPage: React.FC = () => {
         <p className="text-gray-600 dark:text-gray-400 mt-1">{engagement.clientOrganizationName}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Pentester</p>
           <p className="text-gray-900 dark:text-white">{engagement.leadPentesterName}</p>
@@ -283,6 +356,19 @@ export const EngagementDetailPage: React.FC = () => {
           >
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Testing Type (report wording)</p>
+          <select
+            value={engagement.testingType ?? 'White'}
+            onChange={(e) => testingTypeMutation.mutate(e.target.value as TestingType)}
+            disabled={testingTypeMutation.isPending}
+            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {(Object.keys(TESTING_TYPE_LABELS) as TestingType[]).map((t) => (
+              <option key={t} value={t}>{TESTING_TYPE_LABELS[t]}</option>
             ))}
           </select>
         </div>
@@ -377,8 +463,8 @@ export const EngagementDetailPage: React.FC = () => {
           {hasPermission(Permissions.VulnerabilityReportsGenerate) && (
             <div className="flex flex-col items-end gap-1">
               <button
-                onClick={() => generateReportMutation.mutate()}
-                disabled={!scanningComplete || generateReportMutation.isPending}
+                onClick={() => setGenerateOpen(true)}
+                disabled={!scanningComplete}
                 title={!scanningComplete ? 'Scanning must complete for this engagement before a report can be generated' : undefined}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -403,7 +489,16 @@ export const EngagementDetailPage: React.FC = () => {
                     <p className="font-medium text-gray-900 dark:text-white">Version {report.version}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {report.status} · Generated {new Date(report.generatedAt).toLocaleString()}
+                      {report.templateName && <> · {report.templateName}</>}
                     </p>
+                    {report.narrativeStatus === 'Drafting' && (
+                      <p className="mt-1 inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400">
+                        <Sparkles className="w-3 h-3 animate-pulse" /> AI is drafting the summary sections…
+                      </p>
+                    )}
+                    {report.narrativeStatus === 'Failed' && report.status === 'PendingApproval' && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">AI drafting failed: {report.narrativeError ?? 'unknown error'}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     {report.status === 'PendingApproval' && (
@@ -411,7 +506,25 @@ export const EngagementDetailPage: React.FC = () => {
                         onClick={() => openNarrativeEditor(report)}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
                       >
-                        <Eye className="w-3.5 h-3.5" /> Review Narrative
+                        <Eye className="w-3.5 h-3.5" /> Edit Sections
+                      </button>
+                    )}
+                    {report.status === 'PendingApproval' && report.narrativeStatus !== 'Drafting' && hasPermission(Permissions.VulnerabilityReportsGenerate) && (
+                      <button
+                        onClick={() => draftNarrativeMutation.mutate(report.id)}
+                        disabled={draftNarrativeMutation.isPending}
+                        title="Replace the executive summary, key findings and recommendations with an AI draft"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors text-xs font-medium disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> {report.narrativeStatus === 'Failed' ? 'Retry AI draft' : 'Draft with AI'}
+                      </button>
+                    )}
+                    {report.hasHtmlPreview && (
+                      <button
+                        onClick={() => openPreview(report)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> Preview
                       </button>
                     )}
                     {report.status === 'PendingApproval' && hasPermission(Permissions.VulnerabilityReportsApprove) && (
@@ -430,23 +543,16 @@ export const EngagementDetailPage: React.FC = () => {
                         </button>
                       </>
                     )}
-                    {report.status === 'PendingApproval' && report.draftAvailable && hasPermission(Permissions.VulnerabilityReportsGenerate) && (
-                      <button
-                        onClick={() => setEditingInBrowserReportId(report.id)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-xs font-medium"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" /> Edit in Browser
-                      </button>
-                    )}
                     {report.draftAvailable && hasPermission(Permissions.VulnerabilityReportsDownload) && (
                       <button
                         onClick={() => downloadDraft(report)}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
                       >
-                        <Download className="w-3.5 h-3.5" /> Download Draft (.docx)
+                        <Download className="w-3.5 h-3.5" /> {report.hasHtmlPreview ? 'Download Word' : 'Download Draft (.docx)'}
                       </button>
                     )}
-                    {report.draftAvailable && hasPermission(Permissions.VulnerabilityReportsGenerate) && (
+                    {/* HTML-engine reports get their PDF at generation time; only legacy .docx reports need converting. */}
+                    {report.draftAvailable && !report.hasHtmlPreview && hasPermission(Permissions.VulnerabilityReportsGenerate) && (
                       <button
                         onClick={() => convertToPdfMutation.mutate(report.id)}
                         disabled={convertToPdfMutation.isPending}
@@ -461,6 +567,14 @@ export const EngagementDetailPage: React.FC = () => {
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-xs font-medium"
                       >
                         <Download className="w-3.5 h-3.5" /> Download PDF
+                      </button>
+                    )}
+                    {report.status === 'Approved' && report.pdfAvailable && hasPermission(Permissions.VulnerabilityReportsSend) && (
+                      <button
+                        onClick={() => setSendingReport(report)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors text-xs font-medium"
+                      >
+                        <Mail className="w-3.5 h-3.5" /> Send to Client
                       </button>
                     )}
                     {hasPermission(Permissions.VulnerabilityReportsDelete) && (
@@ -482,7 +596,19 @@ export const EngagementDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <Modal isOpen={editingReportId !== null} onClose={() => setEditingReportId(null)} title="Review Report Narrative" size="lg">
+      <GenerateReportModal
+        isOpen={generateOpen}
+        engagementId={engagementId}
+        engagementTestingType={engagement.testingType ?? 'White'}
+        onClose={() => setGenerateOpen(false)}
+        onGenerated={() => {
+          setGenerateOpen(false);
+          invalidateReports();
+          queryClient.invalidateQueries({ queryKey: ['engagement', engagementId] });
+        }}
+      />
+
+      <Modal isOpen={editingReportId !== null} onClose={() => setEditingReportId(null)} title="Edit Report Sections" size="xl">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Executive Summary</label>
@@ -511,6 +637,89 @@ export const EngagementDetailPage: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             />
           </div>
+          {editingIsHtml && (
+            <>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Lines starting with "- " become bullet points. Text is shown exactly as typed (no formatting codes).</p>
+              {engagement.testingType !== 'Black' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Project Goals and Objectives</label>
+                  <textarea
+                    value={narrativeDraft.projectGoals}
+                    onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, projectGoals: e.target.value }))}
+                    rows={6}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Limitations</label>
+                <textarea
+                  value={narrativeDraft.limitations}
+                  onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, limitations: e.target.value }))}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                />
+              </div>
+              {(assetsData?.data ?? []).length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scope status per asset <span className="font-normal text-gray-400">(shown in the Scope of Engagement table; empty = "Completed")</span></p>
+                  <div className="space-y-2">
+                    {(assetsData?.data ?? []).map((asset: ClientAsset) => (
+                      <div key={asset.id} className="flex items-center gap-3">
+                        <span className="w-1/2 text-sm text-gray-700 dark:text-gray-300 truncate" title={asset.identifier}>{asset.name}</span>
+                        <input
+                          value={narrativeDraft.scopeStatuses[String(asset.id)] ?? ''}
+                          placeholder="Completed"
+                          onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, scopeStatuses: { ...prev.scopeStatuses, [String(asset.id)]: e.target.value } }))}
+                          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={narrativeDraft.showToolNames}
+                  onChange={(e) => setNarrativeDraft((prev) => ({ ...prev, showToolNames: e.target.checked }))}
+                />
+                <span>
+                  Name the actual tools in this report
+                  <span className="block text-xs text-gray-400">Off (default): methodology and "Tools Used" use generic wording such as "Vulnerability Scanning", as everywhere else clients see.</span>
+                </span>
+              </label>
+              {editingFields.length > 0 && (
+                <div className="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-800">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Template fields</p>
+                  {editingFields.map((f) => {
+                    const value = narrativeDraft.customFieldValues[f.key] ?? '';
+                    const setValue = (v: string) => setNarrativeDraft((prev) => ({ ...prev, customFieldValues: { ...prev.customFieldValues, [f.key]: v } }));
+                    return (
+                      <label key={f.key} className="block">
+                        <span className="label">
+                          {f.label} {f.required && <span className="text-red-500">*</span>} <span className="font-mono font-normal text-gray-400">Custom.{f.key}</span>
+                        </span>
+                        {f.type === 'multiline' ? (
+                          <textarea className="input h-auto" rows={3} value={value} placeholder={f.defaultValue ?? ''} onChange={(e) => setValue(e.target.value)} />
+                        ) : (
+                          <input
+                            className="input"
+                            type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
+                            value={value}
+                            placeholder={f.defaultValue ?? ''}
+                            onChange={(e) => setValue(e.target.value)}
+                          />
+                        )}
+                        {f.help && <span className="text-2xs text-gray-500">{f.help}</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
           <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               type="button"
@@ -526,10 +735,23 @@ export const EngagementDetailPage: React.FC = () => {
               disabled={updateNarrativeMutation.isPending}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
-              Save
+              {updateNarrativeMutation.isPending ? 'Saving & regenerating…' : 'Save & Regenerate'}
             </button>
           </div>
         </div>
+      </Modal>
+
+      <SendReportModal report={sendingReport} onClose={() => setSendingReport(null)} />
+
+      {/* sandbox="" : no scripts, no same-origin access — the report HTML is display-only here. */}
+      <Modal isOpen={previewHtml !== null} onClose={() => setPreviewHtml(null)} title="Report Preview" size="xl">
+        <iframe
+          title="Report preview"
+          sandbox=""
+          srcDoc={previewHtml ?? ''}
+          className="w-full h-[75vh] bg-white rounded border border-gray-200 dark:border-gray-700"
+        />
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Continuous preview of the exact content in the PDF and Word files (page layout, page numbers and the contents page appear in the PDF).</p>
       </Modal>
 
       <Modal isOpen={rejectingReportId !== null} onClose={() => setRejectingReportId(null)} title="Reject Report" size="sm">
@@ -641,17 +863,24 @@ export const EngagementDetailPage: React.FC = () => {
           <div>
             <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select scan tools</p>
             <div className="space-y-2">
-              {SCAN_TOOLS.map((tool) => (
-                <label key={tool} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedTools.includes(tool)}
-                    onChange={() => toggleTool(tool)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{getScanToolLabel(tool)}</span>
-                </label>
-              ))}
+              {availableTools.length === 0 && (
+                <p className="text-sm text-amber-600 dark:text-amber-400">All scan tools are currently disabled (Configuration → Scan Tools).</p>
+              )}
+              {availableTools.map(({ tool, label, customToolId }) => {
+                const key = customToolId ? `Custom:${customToolId}` : tool;
+                return (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedTools.includes(key)}
+                      onChange={() => toggleTool(key)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{customToolId ? label : getScanToolLabel(tool)}</span>
+                    {customToolId && <span className="badge-neutral">custom</span>}
+                  </label>
+                );
+              })}
             </div>
           </div>
           <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -674,16 +903,6 @@ export const EngagementDetailPage: React.FC = () => {
           </div>
         </div>
       </Modal>
-
-      {editingInBrowserReportId !== null && (
-        <ReportEditorModal
-          reportId={editingInBrowserReportId}
-          onClose={() => {
-            setEditingInBrowserReportId(null);
-            invalidateReports();
-          }}
-        />
-      )}
     </div>
   );
 };

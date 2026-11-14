@@ -1,6 +1,7 @@
+import { HtmlTemplateEditorModal } from '../components/HtmlTemplateEditorModal';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2, Upload, FileX, FileText, Star } from 'lucide-react';
+import { Pencil, Trash2, Upload, FileX, FileText, Star, Code, Braces } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal/Modal';
@@ -103,10 +104,23 @@ export const ReportTemplatesPage: React.FC = () => {
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to set default template'),
   });
 
+  const [htmlItem, setHtmlItem] = useState<ReportTemplate | null>(null);
+  const [studioTab, setStudioTab] = useState<'html' | 'fields' | 'preview'>('html');
+
   const columns: Column<ReportTemplate>[] = [
     { key: 'name', label: 'Name', sortable: true },
     { key: 'companyDisplayName', label: 'Company Display Name' },
-    { key: 'isDefault', label: 'Default', render: (value: boolean) => (value ? 'Yes' : 'No') },
+    { key: 'isDefault', label: 'Default', render: (value: boolean) => (value ? <span className="badge-brand">Default</span> : <span className="text-xs text-gray-400">—</span>) },
+    {
+      key: 'customFields',
+      label: 'Dynamic fields',
+      render: (_, item) =>
+        item.customFields && item.customFields.length > 0 ? (
+          <span className="font-mono text-2xs text-gray-600 dark:text-gray-400">{item.customFields.map((f) => f.key).join(', ')}</span>
+        ) : (
+          <span className="text-xs text-gray-400">none</span>
+        ),
+    },
     {
       key: 'hasCustomDocxTemplate',
       label: 'Template Document',
@@ -116,14 +130,16 @@ export const ReportTemplatesPage: React.FC = () => {
             <FileText className="w-3.5 h-3.5" /> {item.docxTemplateFileName}
           </span>
         ) : (
-          <span className="text-xs text-gray-500 dark:text-gray-400">Default document (embedded)</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">HTML engine{item.hasCustomHtmlTemplate ? ' — custom template' : ' — built-in template'}</span>
         ),
     },
   ];
 
   const rowActions: RowAction<ReportTemplate>[] = [
     { icon: Star, label: 'Set as Default', onClick: (item) => setDefaultMutation.mutate(item.id), variant: 'success', show: (item) => !item.isDefault },
-    { icon: Upload, label: 'Upload Template Document', onClick: (item) => setUploadItem(item), variant: 'primary' },
+    { icon: Code, label: 'Template studio: HTML, upload, preview', onClick: (item) => { setStudioTab('html'); setHtmlItem(item); }, variant: 'primary' },
+    { icon: Braces, label: 'Dynamic fields', onClick: (item) => { setStudioTab('fields'); setHtmlItem(item); }, variant: 'primary' },
+    { icon: Upload, label: 'Upload Word Document (legacy engine)', onClick: (item) => setUploadItem(item), variant: 'secondary' },
     { icon: FileX, label: 'Remove Custom Template', onClick: (item) => setClearItem(item), variant: 'danger', show: (item) => item.hasCustomDocxTemplate },
     { icon: Pencil, label: 'Edit', onClick: (item) => setEditItem(item), variant: 'primary' },
     { icon: Trash2, label: 'Delete', onClick: (item) => setDeleteId(item.id), variant: 'danger' },
@@ -141,9 +157,14 @@ export const ReportTemplatesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Report Templates</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Manage report templates used when generating engagement reports</p>
+      <div className="page-header">
+        <div>
+          <p className="page-eyebrow">Reporting</p>
+          <h1 className="page-title">Report Templates</h1>
+          <p className="page-subtitle">
+            Each template is Handlebars HTML that becomes both the PDF and the Word file. Open the template studio to edit or upload HTML, define dynamic fields filled per report, and preview with sample data. Uploading a Word document instead switches that template to the legacy engine (Word only, no preview).
+          </p>
+        </div>
       </div>
 
       <DataTable
@@ -268,6 +289,7 @@ export const ReportTemplatesPage: React.FC = () => {
         confirmText="Remove"
         variant="danger"
       />
+      <HtmlTemplateEditorModal template={htmlItem ? templates.find((t) => t.id === htmlItem.id) ?? htmlItem : null} initialTab={studioTab} onClose={() => setHtmlItem(null)} />
     </div>
   );
 };

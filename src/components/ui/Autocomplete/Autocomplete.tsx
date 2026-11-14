@@ -120,15 +120,15 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
       )}
 
       <div
-        className={`relative flex items-center w-full border rounded-lg transition-all ${
+        className={`relative flex items-center w-full border rounded-md transition-all ${
           isOpen
-            ? 'border-blue-500 ring-2 ring-blue-500/20'
+            ? 'border-brand-500 ring-2 ring-brand-500/30 dark:border-brand-400'
             : error
               ? 'border-red-500'
-              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+              : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''} bg-white dark:bg-gray-900`}
       >
-        <Search className="w-4 h-4 text-gray-400 ml-3 shrink-0" />
+        <Search className="w-4 h-4 text-gray-400 ml-2.5 shrink-0" />
         <input
           ref={inputRef}
           type="text"
@@ -138,7 +138,7 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={selectedOption ? selectedOption.label : placeholder}
           disabled={disabled}
-          className="w-full px-2 py-2.5 text-sm text-gray-900 dark:text-white bg-transparent placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed"
+          className="w-full px-2 h-8 text-13 text-gray-900 dark:text-white bg-transparent placeholder-gray-400 focus:outline-none disabled:cursor-not-allowed"
         />
 
         <div className="flex items-center gap-1 pr-2 shrink-0">
@@ -160,23 +160,23 @@ export const Autocomplete: React.FC<AutocompleteProps> = ({
       {isOpen && (
         <ul
           ref={listRef}
-          className="absolute z-50 w-full mt-1 max-h-60 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1"
+          className="absolute z-50 w-full mt-1 max-h-60 overflow-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md shadow-overlay py-1"
         >
           {loading ? (
-            <li className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 text-center">Loading...</li>
+            <li className="px-3 py-2 text-13 text-gray-500 dark:text-gray-400 text-center">Loading...</li>
           ) : filtered.length === 0 ? (
-            <li className="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400 text-center">No results found</li>
+            <li className="px-3 py-2 text-13 text-gray-500 dark:text-gray-400 text-center">No results found</li>
           ) : (
             filtered.map((option, index) => (
               <li
                 key={option.value}
                 onClick={() => handleSelect(option)}
-                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                className={`px-3 py-1.5 text-13 cursor-pointer transition-colors ${
                   option.value === value
-                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium'
+                    ? 'bg-brand-50 dark:bg-brand-500/10 text-brand-800 dark:text-brand-300 font-medium'
                     : index === highlightedIndex
-                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/60'
                 }`}
               >
                 {option.label}

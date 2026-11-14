@@ -12,6 +12,8 @@ export interface ChainStep {
   id: number;
   publicId: string;
   tool: ScanTool;
+  // Client-facing label from the API (a custom tool's own label; never the internal tool name).
+  toolLabel?: string | null;
   status: ScanStatus;
 }
 
@@ -23,10 +25,22 @@ export interface ScanProgress {
   total: number | null;
 }
 
+export type FindingEntry = Extract<ConsoleEntry, { kind: 'finding' }>;
+
+// Memory caps. Scans can emit tens of thousands of lines; keeping (and copying) all of them made
+// the page — and with it the whole SPA — freeze. The terminal keeps its own scrollback.
+export const MAX_CONSOLE_ENTRIES = 2000;
+export const MAX_LIVE_FINDINGS = 1000;
+
 export interface ScanConsoleSession {
   steps: ChainStep[];
   activePublicId: string | null;
   entries: ConsoleEntry[];
+  // Number of older entries dropped from the front of `entries` (so the console pane can keep an
+  // absolute line counter and only write genuinely new lines).
+  entryOffset: number;
+  // Live findings kept separately so trimming console lines never loses them.
+  findings: FindingEntry[];
   findingCounts: Record<string, number>;
   latestPhase: string | null;
   progress: ScanProgress | null;
@@ -52,3 +66,19 @@ export const useScanConsoleStore = create<ScanConsoleStoreState>()((set) => ({
       return { sessions: { ...state.sessions, [rootPublicId]: updater(prev) } };
     }),
 }));
+
+// Appends a batch of entries in one immutable update, collecting findings and trimming the
+// oldest console lines beyond MAX_CONSOLE_ENTRIES.
+export function appendEntries(prev: ScanConsoleSession, batch: ConsoleEntry[]): ScanConsoleSession {
+  if (batch.length === 0) return prev;
+  const combined = prev.entries.concat(batch);
+  const overflow = Math.max(0, combined.length - MAX_CONSOLE_ENTRIES);
+  const newFindings = batch.filter((e): e is FindingEntry => e.kind === 'finding');
+  const findings = newFindings.length === 0 ? prev.findings : prev.findings.concat(newFindings).slice(-MAX_LIVE_FINDINGS);
+  return {
+    ...prev,
+    entries: overflow > 0 ? combined.slice(overflow) : combined,
+    entryOffset: prev.entryOffset + overflow,
+    findings,
+  };
+}

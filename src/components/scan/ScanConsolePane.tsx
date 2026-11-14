@@ -7,6 +7,8 @@ import { ConsoleEntry } from '../../core/hooks/useScanChainConsole';
 
 interface ScanConsolePaneProps {
   entries: ConsoleEntry[];
+  // Entries already dropped from the front of `entries` (store trimming); 0 when untrimmed.
+  entryOffset?: number;
   activeTool?: string;
   live?: boolean;
 }
@@ -44,7 +46,7 @@ function renderEntry(entry: ConsoleEntry): string {
   }
 }
 
-export const ScanConsolePane: React.FC<ScanConsolePaneProps> = ({ entries, activeTool, live = false }) => {
+export const ScanConsolePane: React.FC<ScanConsolePaneProps> = ({ entries, entryOffset = 0, activeTool, live = false }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -55,6 +57,7 @@ export const ScanConsolePane: React.FC<ScanConsolePaneProps> = ({ entries, activ
 
     const terminal = new Terminal({
       convertEol: true,
+      scrollback: 5000,
       disableStdin: true,
       cursorBlink: true,
       fontSize: 13,
@@ -83,11 +86,18 @@ export const ScanConsolePane: React.FC<ScanConsolePaneProps> = ({ entries, activ
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
-    for (let i = writtenCountRef.current; i < entries.length; i++) {
-      terminal.writeln(renderEntry(entries[i]));
+    // writtenCountRef is an absolute line number; entries may have been trimmed from the front.
+    const total = entryOffset + entries.length;
+    const start = Math.max(writtenCountRef.current, entryOffset);
+    if (start >= total) return;
+    // One write call for the whole batch instead of one per line.
+    const lines: string[] = [];
+    for (let i = start; i < total; i++) {
+      lines.push(renderEntry(entries[i - entryOffset]));
     }
-    writtenCountRef.current = entries.length;
-  }, [entries]);
+    terminal.write(lines.join('\r\n') + '\r\n');
+    writtenCountRef.current = total;
+  }, [entries, entryOffset]);
 
   return (
     <TerminalWindow title={`scan-console${activeTool ? ` — ${activeTool}` : ''}`} live={live}>

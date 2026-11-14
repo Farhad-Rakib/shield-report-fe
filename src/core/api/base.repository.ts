@@ -160,6 +160,10 @@ export class BaseRepository implements IBaseRepository {
       axiosConfig.params = config.params;
     }
 
+    if (config?.timeout) {
+      axiosConfig.timeout = config.timeout;
+    }
+
     if (config?.headers || config?.contentType) {
       axiosConfig.headers = {
         ...config?.headers,

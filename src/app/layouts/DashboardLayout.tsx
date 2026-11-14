@@ -25,7 +25,7 @@ export const DashboardLayout: React.FC = () => {
   }, [allSettings, setSettings]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <CommandPalette />
       <div className="flex h-screen overflow-hidden">
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
@@ -34,7 +34,7 @@ export const DashboardLayout: React.FC = () => {
           <Header onMenuClick={() => setIsSidebarOpen(true)} />
 
           <main className="flex-1 overflow-y-auto">
-            <div className="container mx-auto px-4 py-6">
+            <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 py-5">
               <Outlet />
             </div>
           </main>

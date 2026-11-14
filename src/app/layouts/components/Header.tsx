@@ -1,12 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
-import { Menu, LogOut, User, Sun, Moon } from 'lucide-react';
+import { Menu, LogOut, User, Sun, Moon, ChevronRight, ChevronDown } from 'lucide-react';
 // Bell, Check, Trash2 — only used by the notification bell, commented out below.
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../../features/auth/store/auth.store';
 import { useThemeStore } from '../../../core/stores/theme.store';
 // import { useNotificationStore, Notification } from '../../../core/stores/notification.store';
 import { userApi } from '../../../core/api/services/user.api';
+import { findActiveTrail, useNavigationMenu } from '../navigation';
+
+// Breadcrumb fallback for routes that are not in the menu (e.g. /engagements/12, /profile).
+const fallbackCrumbs = (pathname: string): string[] => {
+  const parts = pathname.split('/').filter((p) => p && !/^\d+$/.test(p) && !/^[0-9a-f-]{16,}$/i.test(p));
+  if (parts.length === 0) return ['Dashboard'];
+  return parts.map((p) => p.replace(/-/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase()));
+};
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -62,6 +70,8 @@ const NotificationItem: React.FC<{
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const menuItems = useNavigationMenu();
   const { isAuthenticated, tokenPayload, logout } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
   // const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotificationStore();
@@ -100,25 +110,59 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     navigate('/login');
   };
 
+  const { trail } = findActiveTrail(menuItems, location.pathname);
+  const crumbs = trail.length > 0 ? trail : fallbackCrumbs(location.pathname);
+  const envLabel = import.meta.env.DEV ? 'Local' : 'Production';
+
   return (
-    <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-30">
-      <div className="flex items-center justify-between h-16 px-4">
+    <header className="h-14 shrink-0 bg-white/90 dark:bg-gray-950/90 backdrop-blur border-b border-gray-200 dark:border-gray-800 sticky top-0 z-30">
+      <div className="flex items-center justify-between h-full px-4 gap-3">
         <button
           onClick={onMenuClick}
-          className="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          aria-label="Open navigation"
+          className="lg:hidden btn-icon -ml-1"
         >
-          <Menu className="w-6 h-6" />
+          <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex-1 lg:ml-0 ml-4" />
+        {/* Page context */}
+        <nav aria-label="Breadcrumb" className="flex-1 min-w-0">
+          <ol className="flex items-center gap-1.5 text-13 min-w-0">
+            {crumbs.map((c, i) => {
+              const last = i === crumbs.length - 1;
+              return (
+                <li key={`${c}-${i}`} className={`flex items-center gap-1.5 min-w-0 ${last ? '' : 'hidden sm:flex'}`}>
+                  {i > 0 && <ChevronRight className="w-3.5 h-3.5 shrink-0 text-gray-300 dark:text-gray-600 hidden sm:block" />}
+                  <span
+                    className={`truncate ${
+                      last ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400'
+                    }`}
+                    aria-current={last ? 'page' : undefined}
+                  >
+                    {c}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
 
         <div className="flex items-center gap-1">
+          <span
+            className="hidden md:inline-flex items-center gap-1.5 h-6 px-2 mr-1 rounded-full border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 text-2xs font-medium text-gray-600 dark:text-gray-400"
+            title="Environment"
+          >
+            <span className={`status-dot ${import.meta.env.DEV ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+            <span className="font-mono uppercase tracking-wider">{envLabel}</span>
+          </span>
+
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="btn-icon"
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
           {/* Notification bell — commented out for now.
@@ -162,36 +206,47 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           </div>
           */}
 
-          <div ref={userRef} className="relative ml-1">
+          <div className="w-px h-5 bg-gray-200 dark:bg-gray-800 mx-1.5" aria-hidden="true" />
+
+          <div ref={userRef} className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-haspopup="menu"
+              aria-expanded={showUserMenu}
+              className="flex items-center gap-2.5 h-9 pl-1 pr-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800/80 transition-colors"
             >
               {profile?.profileImageUrl ? (
-                <img src={profile.profileImageUrl} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
+                <img src={profile.profileImageUrl} alt={displayName} className="w-7 h-7 rounded-md object-cover ring-1 ring-gray-200 dark:ring-gray-700" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-                  <span className="text-white text-sm font-medium">{initials}</span>
+                <div className="w-7 h-7 rounded-md bg-gray-900 dark:bg-gray-800 ring-1 ring-inset ring-gray-900/10 dark:ring-gray-700 flex items-center justify-center">
+                  <span className="text-brand-300 text-2xs font-semibold font-mono">{initials}</span>
                 </div>
               )}
-              <div className="hidden md:block text-left">
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</p>
-                {displayRole && <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{displayRole}</p>}
+              <div className="hidden md:block text-left leading-tight">
+                <p className="text-13 font-medium text-gray-900 dark:text-gray-100 max-w-[10rem] truncate">{displayName}</p>
+                {displayRole && <p className="text-2xs text-gray-500 dark:text-gray-400 capitalize">{displayRole}</p>}
               </div>
+              <ChevronDown className="hidden md:block w-3.5 h-3.5 text-gray-400" />
             </button>
 
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
+              <div role="menu" className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-gray-900 rounded-lg shadow-overlay border border-gray-200 dark:border-gray-800 py-1 z-20">
+                <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 md:hidden">
+                  <p className="text-13 font-medium text-gray-900 dark:text-gray-100 truncate">{displayName}</p>
+                  {displayRole && <p className="text-2xs text-gray-500 dark:text-gray-400 capitalize">{displayRole}</p>}
+                </div>
                 <button
+                  role="menuitem"
                   onClick={() => { setShowUserMenu(false); navigate('/profile'); }}
-                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-13 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   <User className="w-4 h-4" /> Profile
                 </button>
-                <hr className="my-1 border-gray-200 dark:border-gray-700" />
+                <hr className="my-1 border-gray-100 dark:border-gray-800" />
                 <button
+                  role="menuitem"
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-13 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
                 >
                   <LogOut className="w-4 h-4" /> Logout
                 </button>

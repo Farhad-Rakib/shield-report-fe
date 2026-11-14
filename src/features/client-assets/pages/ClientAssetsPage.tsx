@@ -9,6 +9,9 @@ import { toast } from '../../../components/ui/Toast/toast.store';
 import { CriticalityBadge, EnvironmentBadge } from '../../../components/badges/PentestBadges';
 import { clientAssetApi } from '../../../core/api/services/client-asset.api';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
+import { useAuthStore } from '../../auth/store/auth.store';
+import { Permissions } from '../../../core/constants/permissions';
+import { ScanAuthorizationModal } from '../components/ScanAuthorizationModal';
 import { ClientAsset } from '../../../domain/models/client-asset.model';
 import { CreateClientAssetRequestDto } from '../../../domain/dto/client-asset.dto';
 
@@ -16,6 +19,8 @@ export const ClientAssetsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [authorizationAsset, setAuthorizationAsset] = useState<ClientAsset | null>(null);
+  const hasPermission = useAuthStore((s) => s.hasPermission);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -50,24 +55,6 @@ export const ClientAssetsPage: React.FC = () => {
       setShowAddModal(false);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to register asset'),
-  });
-
-  const authorizeMutation = useMutation({
-    mutationFn: (assetId: number) => clientAssetApi.authorizeForScanning(assetId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-assets', clientOrganizationId] });
-      toast.success('Asset authorized for scanning');
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to authorize asset'),
-  });
-
-  const revokeMutation = useMutation({
-    mutationFn: (assetId: number) => clientAssetApi.revokeScanAuthorization(assetId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-assets', clientOrganizationId] });
-      toast.success('Scan authorization revoked');
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to revoke authorization'),
   });
 
   const createFields: FormField[] = [
@@ -145,17 +132,10 @@ export const ClientAssetsPage: React.FC = () => {
   const rowActions: RowAction<ClientAsset>[] = [
     {
       icon: ShieldCheck,
-      label: 'Authorize for Scanning',
-      onClick: (asset) => authorizeMutation.mutate(asset.id),
-      variant: 'success',
-      show: (asset) => !asset.isAuthorizedForScanning,
-    },
-    {
-      icon: ShieldOff,
-      label: 'Revoke Scan Authorization',
-      onClick: (asset) => revokeMutation.mutate(asset.id),
-      variant: 'danger',
-      show: (asset) => asset.isAuthorizedForScanning,
+      label: 'Scan Authorization',
+      onClick: (asset) => setAuthorizationAsset(asset),
+      variant: 'primary',
+      show: () => hasPermission(Permissions.ScanAuthorizationsRead),
     },
   ];
 
@@ -165,7 +145,7 @@ export const ClientAssetsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Client Assets</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Register assets and authorize them for scanning — scans are launched from an engagement (Run Scoped Scan), so findings are always reportable
+            Register assets and record the client's scan authorization (approval, evidence, validity window, allowed tools) — scans are launched from an engagement and only run while an authorization covers them
           </p>
         </div>
         <div>
@@ -217,6 +197,12 @@ export const ClientAssetsPage: React.FC = () => {
           isLoading={createMutation.isPending}
         />
       </Modal>
+
+      <ScanAuthorizationModal
+        asset={authorizationAsset}
+        canManage={hasPermission(Permissions.ScanAuthorizationsManage)}
+        onClose={() => setAuthorizationAsset(null)}
+      />
     </div>
   );
 };

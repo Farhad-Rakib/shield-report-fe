@@ -1,37 +1,14 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, ChevronLeft, X, Command } from 'lucide-react';
-import * as Icons from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { menuApi } from '../../../core/api/services/menu.api';
+import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { MenuItem } from '../../../domain/models/menu.model';
-import { useAuthStore } from '../../../features/auth/store/auth.store';
 import { useSiteSettingsStore } from '../../../core/stores/site-settings.store';
 import { useSidebarStore } from '../../../core/stores/sidebar.store';
-import { AppConfig } from '../../../core/config/app.config';
+import { buildNavEntries, findActiveTrail, useNavigationMenu } from '../navigation';
+import { MenuIcon } from './MenuIcon';
+import { BrandMark } from './BrandMark';
 
-const iconMap: Record<string, string> = {
-  dashboard: 'LayoutDashboard',
-  users: 'Users',
-  roles: 'Shield',
-  rolepermissions: 'ShieldCheck',
-  'role-permissions': 'ShieldCheck',
-  permissions: 'Key',
-  'user-roles': 'UserCheck',
-  settings: 'Settings',
-  activity: 'Activity',
-  home: 'Home',
-  products: 'Package',
-  orders: 'ShoppingCart',
-  analytics: 'TrendingUp',
-  notifications: 'Bell',
-  calendar: 'Calendar',
-  messages: 'MessageSquare',
-  profile: 'User',
-  preferences: 'Sliders',
-  menu: 'Menu',
-  'site-settings': 'Settings',
-};
+// Icon names → lucide components: see `iconMap` in ./menuIcons.ts (generic fallback for unknown names).
 
 interface SidebarProps {
   isOpen: boolean;
@@ -40,157 +17,179 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
-  const { tokenPayload } = useAuthStore();
-  const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const { siteTitle } = useSiteSettingsStore();
   const { isCollapsed, toggleCollapsed } = useSidebarStore();
+  // Section groups default to expanded; this tracks the ones the user folded away.
+  const [collapsedGroups, setCollapsedGroups] = useState<number[]>([]);
+  // Nested (depth ≥ 2) sub-menus keep the old click-to-expand behaviour.
+  const [expandedNested, setExpandedNested] = useState<number[]>([]);
 
-  const displayTitle = siteTitle || AppConfig.app.name;
+  const menuItems = useNavigationMenu();
+  const entries = buildNavEntries(menuItems);
+  const { url: activeUrl } = findActiveTrail(menuItems, location.pathname);
 
-  const isSuperAdmin = tokenPayload?.role === 'SuperAdmin' ||
-    tokenPayload?.['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] === 'SuperAdmin';
+  const displayTitle = siteTitle || 'ShieldReport';
 
-  const { data: menuItems = [] } = useQuery({
-    queryKey: ['menu', isSuperAdmin ? 'all' : 'filtered'],
-    queryFn: () => isSuperAdmin ? menuApi.getAllMenuItems() : menuApi.getMenuItems(),
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-  });
+  const toggleGroup = (id: number) =>
+    setCollapsedGroups((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
+  const toggleNested = (id: number) =>
+    setExpandedNested((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
 
-  const toggleExpand = (title: string) => {
-    setExpandedItems((prev) =>
-      prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title]
-    );
-  };
+  const linkClass = (active: boolean, depth: number) =>
+    `group relative flex items-center gap-2.5 rounded-md text-13 font-medium transition-colors ${
+      isCollapsed ? 'lg:justify-center lg:px-0 h-9 px-2.5' : 'h-8 px-2.5'
+    } ${depth > 1 && !isCollapsed ? 'ml-4' : ''} ${
+      active
+        ? 'bg-console-hover text-white'
+        : 'text-console-muted hover:bg-console-raised hover:text-gray-100'
+    }`;
 
-  const getIcon = (iconName?: string | null) => {
-    if (!iconName) return null;
-    const mapped = iconMap[iconName.toLowerCase()] || iconName;
-    const Icon = (Icons as any)[mapped];
-    return Icon ? <Icon className="w-5 h-5" /> : null;
-  };
-
-  const renderMenuItem = (item: MenuItem, depth = 0) => {
-    const hasChildren = item.children && item.children.length > 0;
-    const isExpanded = expandedItems.includes(item.title);
-    const isActive = item.url === location.pathname;
-
-    if (hasChildren) {
-      return (
-        <div key={item.id}>
-          <button
-            onClick={() => toggleExpand(item.title)}
-            title={isCollapsed ? item.title : undefined}
-            className={`w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between px-4'} py-2.5 text-sm font-medium rounded-lg transition-colors ${
-              isExpanded
-                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-            }`}
-            style={{ paddingLeft: isCollapsed ? undefined : `${1 + depth * 0.75}rem` }}
-          >
-            <div className="flex items-center gap-3">
-              {getIcon(item.icon)}
-              {!isCollapsed && <span>{item.title}</span>}
-            </div>
-            {!isCollapsed && (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
-          </button>
-          {isExpanded && !isCollapsed && (
-            <div className="mt-1 space-y-1">
-              {item.children!.map((child) => renderMenuItem(child, depth + 1))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (!item.url) return null;
-
+  const renderLink = (item: MenuItem, depth: number) => {
+    const active = !!item.url && item.url === activeUrl;
     return (
       <Link
         key={item.id}
-        to={item.url}
+        to={item.url!}
         onClick={onClose}
         title={isCollapsed ? item.title : undefined}
-        className={`flex items-center gap-3 ${isCollapsed ? 'justify-center px-2' : 'px-4'} py-2.5 text-sm font-medium rounded-lg transition-colors ${
-          isActive
-            ? 'bg-blue-600 text-white shadow-sm'
-            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-        }`}
-        style={{ paddingLeft: isCollapsed ? undefined : `${1 + depth * 0.75}rem` }}
+        aria-current={active ? 'page' : undefined}
+        className={linkClass(active, depth)}
       >
-        {getIcon(item.icon)}
-        {!isCollapsed && <span>{item.title}</span>}
+        {active && (
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r bg-brand-400" aria-hidden="true" />
+        )}
+        <MenuIcon
+          name={item.icon}
+          className={`w-4 h-4 shrink-0 ${active ? 'text-brand-400' : 'text-gray-500 group-hover:text-gray-300'}`}
+        />
+        <span className={`truncate ${isCollapsed ? 'lg:hidden' : ''}`}>{item.title}</span>
       </Link>
     );
   };
 
-  // Filter: only show top-level items that have children or a URL
-  // Deduplicate: items appearing inside a parent should not also appear at top level
-  const childIds = new Set<number>();
-  menuItems.forEach(item => {
-    if (item.children) {
-      item.children.forEach(child => childIds.add(child.id));
+  const renderItem = (item: MenuItem, depth: number): React.ReactNode => {
+    const children = item.children ?? [];
+    if (children.length > 0) {
+      const open = expandedNested.includes(item.id) || children.some((c) => c.url === activeUrl);
+      return (
+        <div key={item.id}>
+          <button
+            type="button"
+            onClick={() => toggleNested(item.id)}
+            title={isCollapsed ? item.title : undefined}
+            aria-expanded={open}
+            className={`${linkClass(false, depth)} w-full`}
+          >
+            <MenuIcon name={item.icon} className="w-4 h-4 shrink-0 text-gray-500 group-hover:text-gray-300" />
+            <span className={`flex-1 text-left truncate ${isCollapsed ? 'lg:hidden' : ''}`}>{item.title}</span>
+            <span className={isCollapsed ? 'lg:hidden' : ''}>
+              {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            </span>
+          </button>
+          {open && <div className="mt-0.5 space-y-0.5">{children.map((c) => renderItem(c, depth + 1))}</div>}
+        </div>
+      );
     }
-  });
-  const dedupedItems = menuItems.filter(item =>
-    !childIds.has(item.id) && ((item.children && item.children.length > 0) || item.url)
-  );
+    if (!item.url) return null;
+    return renderLink(item, depth);
+  };
 
   return (
     <>
       {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
-          onClick={onClose}
-        />
+        <div className="fixed inset-0 bg-gray-950/60 backdrop-blur-[2px] z-40 lg:hidden" onClick={onClose} />
       )}
 
       <aside
-        className={`fixed lg:relative inset-y-0 left-0 z-50 w-72 ${isCollapsed ? 'lg:w-20' : 'lg:w-72'} transform transition-all duration-300 ease-in-out ${
+        className={`fixed lg:relative inset-y-0 left-0 z-50 w-64 ${isCollapsed ? 'lg:w-[60px]' : 'lg:w-60'} transform transition-[width,transform] duration-200 ease-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } flex flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800`}
+        } flex flex-col bg-console border-r border-console-border text-gray-300`}
+        aria-label="Primary navigation"
       >
-        <button
-          onClick={toggleCollapsed}
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="hidden lg:flex absolute -right-3 top-5 z-10 w-6 h-6 items-center justify-center rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+        {/* Brand */}
+        <div
+          className={`flex items-center h-14 shrink-0 justify-between border-b border-console-border ${
+            isCollapsed ? 'px-4 lg:px-0 lg:justify-center' : 'px-4'
+          }`}
         >
-          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
-        </button>
-
-        <div className={`flex items-center h-16 justify-between ${isCollapsed ? 'px-2' : 'px-4'} border-b border-gray-200 dark:border-gray-800`}>
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-blue-600">
-              <Command className="w-4 h-4 text-white" />
-            </div>
-            {!isCollapsed && (
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">
-                {displayTitle}
-              </h2>
-            )}
+          <div className={isCollapsed ? 'lg:hidden' : ''}>
+            <BrandMark title={displayTitle} />
           </div>
+          {isCollapsed && (
+            <div className="hidden lg:block">
+              <BrandMark compact />
+            </div>
+          )}
           <button
             onClick={onClose}
-            className="lg:hidden p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            aria-label="Close navigation"
+            className="lg:hidden p-1 rounded-md text-gray-400 hover:text-white hover:bg-console-raised"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {dedupedItems.map((item) => renderMenuItem(item))}
+        {/* Menu */}
+        <nav className={`flex-1 overflow-y-auto py-3 ${isCollapsed ? 'px-3 lg:px-2' : 'px-3'}`}>
+          {entries.map((entry, idx) => {
+            if (entry.kind === 'link') {
+              return (
+                <div key={entry.item.id} className="mb-0.5">
+                  {renderItem(entry.item, 0)}
+                </div>
+              );
+            }
+
+            const groupOpen = isCollapsed || !collapsedGroups.includes(entry.item.id);
+            return (
+              <div key={entry.item.id} className={idx === 0 ? '' : 'mt-4'}>
+                {/* Collapsed rail shows a hairline instead of the heading */}
+                {isCollapsed && <div className="hidden lg:block mx-2 mb-2 border-t border-console-border" />}
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(entry.item.id)}
+                  aria-expanded={groupOpen}
+                  className={`group w-full flex items-center justify-between px-2.5 mb-1 h-6 rounded text-2xs font-semibold uppercase tracking-[0.1em] text-gray-500 hover:text-gray-300 transition-colors ${
+                    isCollapsed ? 'lg:hidden' : ''
+                  }`}
+                >
+                  <span className="truncate">{entry.item.title}</span>
+                  <ChevronDown
+                    className={`w-3 h-3 opacity-0 group-hover:opacity-100 transition-transform ${
+                      groupOpen ? '' : '-rotate-90 opacity-100'
+                    }`}
+                  />
+                </button>
+                {groupOpen && <div className="space-y-0.5">{entry.children.map((c) => renderItem(c, 1))}</div>}
+              </div>
+            );
+          })}
         </nav>
 
-        {!isCollapsed && (
-          <div className="p-3 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-              <kbd className="px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-800">Ctrl</kbd>
-              <span>+</span>
-              <kbd className="px-1.5 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-800">K</kbd>
-              <span className="ml-1">Quick Search</span>
-            </div>
+        {/* Footer: quick search hint + collapse toggle */}
+        <div
+          className={`shrink-0 border-t border-console-border p-2 flex items-center ${
+            isCollapsed ? 'justify-between lg:justify-center' : 'justify-between'
+          }`}
+        >
+          <div className={`flex items-center gap-1.5 pl-1.5 text-2xs text-gray-500 ${isCollapsed ? 'lg:hidden' : ''}`}>
+            <kbd className="px-1.5 h-5 inline-flex items-center rounded border border-console-border bg-console-raised font-mono text-gray-400">
+              Ctrl
+            </kbd>
+            <kbd className="px-1.5 h-5 inline-flex items-center rounded border border-console-border bg-console-raised font-mono text-gray-400">
+              K
+            </kbd>
+            <span className="ml-0.5">Quick search</span>
           </div>
-        )}
+          <button
+            onClick={toggleCollapsed}
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="hidden lg:inline-flex w-8 h-8 items-center justify-center rounded-md text-gray-500 hover:text-white hover:bg-console-raised transition-colors"
+          >
+            {isCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
+        </div>
       </aside>
     </>
   );

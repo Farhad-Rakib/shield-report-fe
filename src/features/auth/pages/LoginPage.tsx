@@ -54,16 +54,16 @@ export const LoginPage: React.FC = () => {
   if (showForgotPassword) {
     return (
       <div>
-        <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Forgot Password</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+        <div className="mb-5">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Forgot Password</h2>
+          <p className="mt-1 text-13 text-gray-500 dark:text-gray-400">
             Enter your email address and we'll send you a reset link
           </p>
         </div>
 
         <form onSubmit={handleForgotPassword} className="space-y-4">
           <div>
-            <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label htmlFor="forgot-email" className="label">
               Email address
             </label>
             <input
@@ -73,7 +73,7 @@ export const LoginPage: React.FC = () => {
               onChange={(e) => setForgotEmail(e.target.value)}
               required
               disabled={forgotLoading}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              className="input input-lg"
               placeholder="you@example.com"
             />
           </div>
@@ -81,11 +81,11 @@ export const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={forgotLoading || !forgotEmail}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary w-full h-10 text-sm"
           >
             {forgotLoading ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 Sending...
               </>
             ) : (
@@ -99,7 +99,7 @@ export const LoginPage: React.FC = () => {
 
         <button
           onClick={() => setShowForgotPassword(false)}
-          className="mt-4 w-full flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+          className="btn-ghost mt-3 w-full"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Sign In
@@ -110,16 +110,16 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div>
-      <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome back</h2>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
+      <div className="mb-5">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Welcome back</h2>
+        <p className="mt-1 text-13 text-gray-500 dark:text-gray-400">
           Sign in to your account to continue
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label htmlFor="email" className="label">
             Email address
           </label>
           <input
@@ -129,20 +129,20 @@ export const LoginPage: React.FC = () => {
             onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
             required
             disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="input input-lg"
             placeholder="you@example.com"
           />
         </div>
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            <label htmlFor="password" className="label mb-0">
               Password
             </label>
             <button
               type="button"
               onClick={() => setShowForgotPassword(true)}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+              className="text-xs font-medium text-brand-700 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 rounded-sm transition-colors"
             >
               Forgot password?
             </button>
@@ -154,7 +154,7 @@ export const LoginPage: React.FC = () => {
             onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
             required
             disabled={isLoading}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="input input-lg"
             placeholder="Enter your password"
           />
         </div>
@@ -162,11 +162,11 @@ export const LoginPage: React.FC = () => {
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-primary w-full h-10 text-sm"
         >
           {isLoading ? (
             <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               Signing in...
             </>
           ) : (

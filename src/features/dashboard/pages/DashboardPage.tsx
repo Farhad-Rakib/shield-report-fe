@@ -156,18 +156,19 @@ export function DashboardPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <p className="page-eyebrow">Operations</p>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">
             Drag to reorder • hover a widget to see controls
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => { reset(userId); markDirty(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            className="btn-secondary btn-sm"
             title="Restore default layout"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -177,11 +178,7 @@ export function DashboardPage() {
             <button
               onClick={saveNow}
               disabled={!hasUnsavedChanges || saveMutation.isPending}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                hasUnsavedChanges
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'
-                  : 'bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-600 cursor-not-allowed'
-              }`}
+              className={`${hasUnsavedChanges ? 'btn-primary' : 'btn-secondary'} btn-sm`}
               title="Save dashboard layout"
             >
               <Save className="w-3.5 h-3.5" />
@@ -202,8 +199,8 @@ export function DashboardPage() {
       />
 
       {removedWidgetIds.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap p-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl border border-dashed border-gray-300 dark:border-gray-600">
-          <span className="text-xs text-gray-500 dark:text-gray-400">Hidden:</span>
+        <div className="flex items-center gap-2 flex-wrap px-3 py-2 bg-gray-50 dark:bg-gray-900/60 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
+          <span className="text-2xs font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">Hidden</span>
           {removedWidgetIds.map(id => (
             <button
               key={id}
@@ -217,7 +214,7 @@ export function DashboardPage() {
                 }));
                 markDirty();
               }}
-              className="text-xs px-2 py-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md text-gray-600 dark:text-gray-300 hover:border-blue-400 hover:text-blue-600 transition-colors"
+              className="text-xs px-2 h-6 inline-flex items-center bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-gray-600 dark:text-gray-300 capitalize hover:border-brand-400 hover:text-brand-700 dark:hover:border-brand-500 dark:hover:text-brand-400 transition-colors"
             >
               + {id.replace(/^(kpi-|widget-)/, '').replace(/-/g, ' ')}
             </button>
@@ -278,10 +275,10 @@ function WidgetGrid({ visibleIds, isCompact, onHide, renderContent }: WidgetGrid
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {segments.map((seg, i) =>
         seg.type === 'grid' ? (
-          <div key={i} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div key={i} className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             {seg.ids.map(id => (
               <DraggableWidget key={id} id={id} onHide={onHide}>
                 {renderContent(id)}

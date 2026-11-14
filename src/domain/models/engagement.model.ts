@@ -22,7 +22,16 @@ export interface Engagement {
   leadPentesterName: string;
   createdByUserId: number;
   assignees: EngagementAssignee[];
+  testingType: TestingType;
 }
+
+// Pentest approach; selects the White/Gray/Black Box wording and sections in generated reports.
+export type TestingType = 'White' | 'Gray' | 'Black';
+export const TESTING_TYPE_LABELS: Record<TestingType, string> = {
+  White: 'White Box (full access, source code)',
+  Gray: 'Gray Box (authenticated user access)',
+  Black: 'Black Box (external, no prior knowledge)',
+};
 
 // Mirrors ShieldReport.Application.Engagements.Dtos.EngagementTaskDto field-for-field.
 export interface EngagementTask {

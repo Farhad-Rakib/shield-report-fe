@@ -12,14 +12,16 @@ interface KpiCardProps {
   loading?: boolean;
 }
 
-const colorMap: Record<KpiColor, { bg: string; icon: string; value: string }> = {
-  red:     { bg: 'bg-red-50 dark:bg-red-900/20',     icon: 'text-red-600 dark:text-red-400',     value: 'text-red-700 dark:text-red-300' },
-  amber:   { bg: 'bg-amber-50 dark:bg-amber-900/20', icon: 'text-amber-600 dark:text-amber-400', value: 'text-amber-700 dark:text-amber-300' },
-  emerald: { bg: 'bg-emerald-50 dark:bg-emerald-900/20', icon: 'text-emerald-600 dark:text-emerald-400', value: 'text-emerald-700 dark:text-emerald-300' },
-  blue:    { bg: 'bg-blue-50 dark:bg-blue-900/20',   icon: 'text-blue-600 dark:text-blue-400',   value: 'text-blue-700 dark:text-blue-300' },
-  purple:  { bg: 'bg-purple-50 dark:bg-purple-900/20', icon: 'text-purple-600 dark:text-purple-400', value: 'text-purple-700 dark:text-purple-300' },
-  indigo:  { bg: 'bg-indigo-50 dark:bg-indigo-900/20', icon: 'text-indigo-600 dark:text-indigo-400', value: 'text-indigo-700 dark:text-indigo-300' },
-  gray:    { bg: 'bg-gray-50 dark:bg-gray-800',      icon: 'text-gray-500 dark:text-gray-400',   value: 'text-gray-700 dark:text-gray-300' },
+// `bar` = hairline accent at the top of the card; `icon` = icon tint; `value` = number colour
+// (neutral except for the risk colours, so red/amber numbers actually stand out).
+const colorMap: Record<KpiColor, { bar: string; icon: string; value: string }> = {
+  red:     { bar: 'bg-sev-critical', icon: 'text-red-600 dark:text-red-400',         value: 'text-red-700 dark:text-red-400' },
+  amber:   { bar: 'bg-sev-medium',   icon: 'text-amber-600 dark:text-amber-400',     value: 'text-amber-700 dark:text-amber-400' },
+  emerald: { bar: 'bg-emerald-500',  icon: 'text-emerald-600 dark:text-emerald-400', value: 'text-gray-900 dark:text-white' },
+  blue:    { bar: 'bg-brand-500',    icon: 'text-brand-700 dark:text-brand-400',     value: 'text-gray-900 dark:text-white' },
+  purple:  { bar: 'bg-violet-500',   icon: 'text-violet-600 dark:text-violet-400',   value: 'text-gray-900 dark:text-white' },
+  indigo:  { bar: 'bg-indigo-500',   icon: 'text-indigo-600 dark:text-indigo-400',   value: 'text-gray-900 dark:text-white' },
+  gray:    { bar: 'bg-gray-400',     icon: 'text-gray-500 dark:text-gray-400',       value: 'text-gray-900 dark:text-white' },
 };
 
 export function KpiCard({ title, value, icon: Icon, color, href, loading }: KpiCardProps) {
@@ -32,12 +34,12 @@ export function KpiCard({ title, value, icon: Icon, color, href, loading }: KpiC
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 animate-pulse">
+      <div className="panel p-4 animate-pulse">
         <div className="flex items-center justify-between mb-3">
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-24" />
-          <div className="h-9 w-9 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+          <div className="h-3 bg-gray-200 dark:bg-gray-800 rounded w-24" />
+          <div className="h-4 w-4 bg-gray-200 dark:bg-gray-800 rounded" />
         </div>
-        <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-16" />
+        <div className="h-7 bg-gray-200 dark:bg-gray-800 rounded w-16" />
       </div>
     );
   }
@@ -45,17 +47,19 @@ export function KpiCard({ title, value, icon: Icon, color, href, loading }: KpiC
   return (
     <div
       onClick={handleClick}
-      className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 transition-all duration-150 ${
-        href ? 'cursor-pointer hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600' : ''
+      onKeyDown={(e) => { if (href && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleClick(); } }}
+      role={href ? 'link' : undefined}
+      tabIndex={href ? 0 : undefined}
+      className={`panel relative overflow-hidden p-4 transition-colors duration-150 ${
+        href ? 'cursor-pointer hover:border-gray-300 dark:hover:border-gray-700 hover:bg-gray-50/60 dark:hover:bg-gray-800/40' : ''
       }`}
     >
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
-        <div className={`p-2 rounded-lg ${colors.bg}`}>
-          <Icon className={`h-5 w-5 ${colors.icon}`} />
-        </div>
+      <span className={`absolute inset-x-0 top-0 h-0.5 ${colors.bar} opacity-80`} aria-hidden="true" />
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-2xs font-semibold uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400 truncate">{title}</p>
+        <Icon className={`h-4 w-4 shrink-0 ${colors.icon}`} />
       </div>
-      <p className={`text-3xl font-bold ${colors.value}`}>{value}</p>
+      <p className={`text-2xl font-semibold tracking-tight tabular-nums ${colors.value}`}>{value}</p>
     </div>
   );
 }

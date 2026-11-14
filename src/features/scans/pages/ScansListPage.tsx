@@ -20,7 +20,7 @@ export const ScansListPage: React.FC = () => {
 
   const columns: Column<Scan>[] = [
     { key: 'clientAssetName', label: 'Asset' },
-    { key: 'tool', label: 'Tool', render: (_, scan) => <span className="text-sm text-gray-600 dark:text-gray-400">{getScanToolLabel(scan.tool)}</span> },
+    { key: 'tool', label: 'Tool', render: (_, scan) => <span className="text-sm text-gray-600 dark:text-gray-400">{getScanToolLabel(scan.tool, scan.toolLabel)}</span> },
     { key: 'status', label: 'Status', render: (_, scan) => <ScanStatusBadge status={scan.status} /> },
     {
       key: 'queuedAt',

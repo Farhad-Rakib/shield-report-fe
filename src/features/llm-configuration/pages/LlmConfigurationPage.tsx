@@ -1,214 +1,451 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2, Power } from 'lucide-react';
-import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
+import { Pencil, Trash2, Power, PowerOff, PlugZap, Plus, CheckCircle2, XCircle } from 'lucide-react';
 import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal/Modal';
-import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
 import { llmConfigurationApi } from '../../../core/api/services/llm-configuration.api';
-import { LlmProviderConfiguration } from '../../../domain/models/llm-provider-config.model';
-import { CreateLlmProviderConfigurationRequestDto, UpdateLlmProviderConfigurationRequestDto } from '../../../domain/dto/llm-provider-config.dto';
+import { LlmProvider, LlmProviderConfiguration, LlmProviderTestResult } from '../../../domain/models/llm-provider-config.model';
 
-const PROVIDER_OPTIONS = [
-  { label: 'OpenRouter', value: 'OpenRouter' },
-  { label: 'Gemini', value: 'Gemini' },
-  { label: 'OpenAI', value: 'OpenAi' },
-];
+type ApiError = { response?: { data?: { message?: string } }; message?: string };
+const errorMessage = (err: unknown, fallback: string) => {
+  const e = err as ApiError | undefined;
+  return e?.response?.data?.message || e?.message || fallback;
+};
+
+interface ProviderInfo {
+  label: string;
+  modelPlaceholder: string;
+  keyPlaceholder: string;
+  baseUrl: 'hidden' | 'optional' | 'required';
+  baseUrlPlaceholder: string;
+  supportsTemperature: boolean;
+  hint: string;
+}
+
+const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
+  Anthropic: {
+    label: 'Anthropic (Claude)',
+    modelPlaceholder: 'claude-opus-5-5',
+    keyPlaceholder: 'sk-ant-...',
+    baseUrl: 'optional',
+    baseUrlPlaceholder: 'Leave blank for https://api.anthropic.com',
+    supportsTemperature: false,
+    hint: 'Uses the official Anthropic SDK. Temperature is not sent (current Claude models reject it).',
+  },
+  OpenAi: {
+    label: 'OpenAI',
+    modelPlaceholder: 'e.g. gpt-4o-mini',
+    keyPlaceholder: 'sk-...',
+    baseUrl: 'optional',
+    baseUrlPlaceholder: 'Leave blank for https://api.openai.com/v1',
+    supportsTemperature: true,
+    hint: '',
+  },
+  Gemini: {
+    label: 'Google Gemini',
+    modelPlaceholder: 'e.g. gemini-flash-latest',
+    keyPlaceholder: 'AIza...',
+    baseUrl: 'optional',
+    baseUrlPlaceholder: 'Leave blank for the Generative Language API',
+    supportsTemperature: true,
+    hint: '',
+  },
+  OpenRouter: {
+    label: 'OpenRouter',
+    modelPlaceholder: 'e.g. openai/gpt-4o-mini',
+    keyPlaceholder: 'sk-or-...',
+    baseUrl: 'optional',
+    baseUrlPlaceholder: 'Leave blank for https://openrouter.ai/api/v1',
+    supportsTemperature: true,
+    hint: '',
+  },
+  OpenAiCompatible: {
+    label: 'Other (OpenAI-compatible)',
+    modelPlaceholder: 'Model name as the endpoint expects it',
+    keyPlaceholder: 'API key / token',
+    baseUrl: 'required',
+    baseUrlPlaceholder: 'e.g. https://api.groq.com/openai/v1',
+    supportsTemperature: true,
+    hint: 'Any endpoint that speaks the OpenAI chat-completions format (Groq, Together, Azure proxy, a self-hosted vLLM or Ollama gateway…). The base URL is the part before /chat/completions.',
+  },
+};
+
+const PROVIDER_ORDER: LlmProvider[] = ['Anthropic', 'OpenAi', 'Gemini', 'OpenRouter', 'OpenAiCompatible'];
+
+interface FormState {
+  name: string;
+  provider: LlmProvider;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  temperature: string;
+  maxOutputTokens: string;
+  promptTemplate: string;
+}
+
+const emptyForm = (): FormState => ({
+  name: '',
+  provider: 'Anthropic',
+  apiKey: '',
+  model: '',
+  baseUrl: '',
+  temperature: '0.2',
+  maxOutputTokens: '2048',
+  promptTemplate: '',
+});
+
+const inputClass = 'input mt-1';
+
+const ProviderFormModal: React.FC<{
+  isOpen: boolean;
+  editing: LlmProviderConfiguration | null;
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ isOpen, editing, onClose, onSaved }) => {
+  const [form, setForm] = useState<FormState>(emptyForm());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setForm(
+      editing
+        ? {
+            name: editing.name,
+            provider: editing.provider,
+            apiKey: '',
+            model: editing.model,
+            baseUrl: editing.baseUrl ?? '',
+            temperature: String(editing.temperature),
+            maxOutputTokens: String(editing.maxOutputTokens),
+            promptTemplate: editing.promptTemplate,
+          }
+        : emptyForm(),
+    );
+  }, [isOpen, editing]);
+
+  const info = PROVIDERS[form.provider];
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const common = {
+        name: form.name.trim() || null,
+        model: form.model.trim(),
+        baseUrl: form.baseUrl.trim() || null,
+        temperature: Number(form.temperature) || 0,
+        maxOutputTokens: Number(form.maxOutputTokens) || 1024,
+        promptTemplate: null,
+      };
+      return editing
+        ? llmConfigurationApi.update(editing.id, { ...common, apiKey: form.apiKey.trim() || null })
+        : llmConfigurationApi.create({ ...common, provider: form.provider, apiKey: form.apiKey.trim() });
+    },
+    onSuccess: () => {
+      toast.success(editing ? 'Provider updated' : 'Provider added. Use Test to check the connection, then Activate it.');
+      onSaved();
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, 'Failed to save provider')),
+  });
+
+  const canSave =
+    form.model.trim().length > 0 &&
+    (editing || form.apiKey.trim().length > 0) &&
+    (info.baseUrl !== 'required' || form.baseUrl.trim().length > 0);
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={editing ? `Edit ${editing.name}` : 'Add LLM Provider'} size="lg">
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave) saveMutation.mutate();
+        }}
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Provider
+            <select
+              value={form.provider}
+              disabled={!!editing}
+              onChange={(e) => set('provider', e.target.value as LlmProvider)}
+              className={inputClass}
+            >
+              {PROVIDER_ORDER.map((p) => (
+                <option key={p} value={p}>
+                  {PROVIDERS[p].label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Name <span className="text-gray-400">(optional)</span>
+            <input
+              value={form.name}
+              maxLength={100}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder={`${info.label} · ${form.model || 'model'}`}
+              className={inputClass}
+            />
+          </label>
+        </div>
+        {info.hint && <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2">{info.hint}</p>}
+
+        <label className="block text-sm text-gray-700 dark:text-gray-300">
+          API key {!editing && <span className="text-red-500">*</span>}
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={form.apiKey}
+            onChange={(e) => set('apiKey', e.target.value)}
+            placeholder={editing ? `Current: ${editing.apiKeyMasked}. Leave blank to keep it` : info.keyPlaceholder}
+            className={inputClass}
+          />
+        </label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Model <span className="text-red-500">*</span>
+            <input value={form.model} onChange={(e) => set('model', e.target.value)} placeholder={info.modelPlaceholder} className={inputClass} />
+          </label>
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Base URL {info.baseUrl === 'required' ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}
+            <input value={form.baseUrl} onChange={(e) => set('baseUrl', e.target.value)} placeholder={info.baseUrlPlaceholder} className={inputClass} />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {info.supportsTemperature && (
+            <label className="block text-sm text-gray-700 dark:text-gray-300">
+              Temperature
+              <input type="number" step="0.1" min={0} max={2} value={form.temperature} onChange={(e) => set('temperature', e.target.value)} className={inputClass} />
+            </label>
+          )}
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Max output tokens
+            <input type="number" min={64} max={64000} value={form.maxOutputTokens} onChange={(e) => set('maxOutputTokens', e.target.value)} className={inputClass} />
+          </label>
+        </div>
+
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          The prompts sent to this provider are managed in <Link to="/llm-prompts" className="text-brand-600 dark:text-brand-400 hover:underline">AI → Prompt Library</Link>.
+        </p>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+            Cancel
+          </button>
+          <button type="submit" disabled={!canSave || saveMutation.isPending} className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+            {saveMutation.isPending ? 'Saving…' : editing ? 'Save changes' : 'Add provider'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
 
 export const LlmConfigurationPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
   const [editItem, setEditItem] = useState<LlmProviderConfiguration | null>(null);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [deleteItem, setDeleteItem] = useState<LlmProviderConfiguration | null>(null);
+  const [testingId, setTestingId] = useState<number | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, LlmProviderTestResult>>({});
 
   const { data: configurations = [], isLoading, error, refetch } = useQuery({
     queryKey: ['llm-provider-configurations'],
     queryFn: () => llmConfigurationApi.getAll(),
   });
 
-  // GET /LlmProviderConfigurations has no server-side pagination — paginate client-side.
-  const totalPages = Math.max(1, Math.ceil(configurations.length / pageSize));
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [totalPages, page]);
-  const pagedConfigurations = configurations.slice((page - 1) * pageSize, page * pageSize);
-
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['llm-provider-configurations'] });
-
-  const createMutation = useMutation({
-    mutationFn: (dto: CreateLlmProviderConfigurationRequestDto) => llmConfigurationApi.create(dto),
-    onSuccess: () => {
-      invalidate();
-      toast.success('LLM provider configuration created successfully');
-      setShowAddModal(false);
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to create configuration'),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, dto }: { id: number; dto: UpdateLlmProviderConfigurationRequestDto }) => llmConfigurationApi.update(id, dto),
-    onSuccess: () => {
-      invalidate();
-      toast.success('LLM provider configuration updated successfully');
-      setEditItem(null);
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to update configuration'),
-  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => llmConfigurationApi.remove(id),
     onSuccess: () => {
       invalidate();
-      toast.success('LLM provider configuration deleted successfully');
-      setDeleteId(null);
+      toast.success('Provider deleted');
+      setDeleteItem(null);
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to delete configuration'),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'Failed to delete provider')),
   });
 
   const activateMutation = useMutation({
-    mutationFn: (id: number) => llmConfigurationApi.activate(id),
-    onSuccess: () => {
+    mutationFn: ({ id, active }: { id: number; active: boolean }) => (active ? llmConfigurationApi.activate(id) : llmConfigurationApi.deactivate(id)),
+    onSuccess: (_, { active }) => {
       invalidate();
-      toast.success('LLM provider activated');
+      toast.success(active ? 'Provider activated' : 'Provider deactivated. AI features are off until one is active');
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to activate provider'),
+    onError: (err: unknown) => toast.error(errorMessage(err, 'Failed to change provider status')),
   });
 
-  const columns: Column<LlmProviderConfiguration>[] = [
-    { key: 'provider', label: 'Provider', sortable: true },
-    { key: 'model', label: 'Model', sortable: true },
-    { key: 'apiKeyMasked', label: 'API Key' },
-    {
-      key: 'isActive',
-      label: 'Status',
-      render: (value: boolean) => (
-        <span
-          className={`px-2.5 py-1 text-xs font-medium rounded-full ${
-            value
-              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-          }`}
-        >
-          {value ? 'Active' : 'Inactive'}
-        </span>
-      ),
-    },
-  ];
+  const runTest = async (item: LlmProviderConfiguration) => {
+    setTestingId(item.id);
+    try {
+      const result = await llmConfigurationApi.test(item.id);
+      setTestResults((r) => ({ ...r, [item.id]: result }));
+      if (result.success) toast.success(`${item.name}: connected in ${(result.latencyMs / 1000).toFixed(1)}s`);
+      else toast.error(`${item.name}: ${result.error ?? 'connection failed'}`);
+    } catch (err) {
+      toast.error(errorMessage(err, 'Test failed'));
+    } finally {
+      setTestingId(null);
+    }
+  };
 
-  const rowActions: RowAction<LlmProviderConfiguration>[] = [
-    {
-      icon: Power,
-      label: 'Activate',
-      onClick: (item) => activateMutation.mutate(item.id),
-      variant: 'primary',
-    },
-    { icon: Pencil, label: 'Edit', onClick: (item) => setEditItem(item), variant: 'primary' },
-    { icon: Trash2, label: 'Delete', onClick: (item) => setDeleteId(item.id), variant: 'danger' },
-  ];
+  const openAdd = () => {
+    setEditItem(null);
+    setFormOpen(true);
+  };
 
-  const createFields: FormField[] = [
-    { name: 'provider', label: 'Provider', type: 'select', required: true, options: PROVIDER_OPTIONS },
-    { name: 'apiKey', label: 'API Key', type: 'password', required: true, placeholder: 'sk-...' },
-    { name: 'model', label: 'Model', type: 'text', required: true, placeholder: 'e.g. gpt-4o-mini' },
-    { name: 'baseUrl', label: 'Base URL (optional)', type: 'text', placeholder: 'Leave blank for provider default' },
-    { name: 'temperature', label: 'Temperature', type: 'number', defaultValue: 0.2 },
-    { name: 'maxOutputTokens', label: 'Max Output Tokens', type: 'number', defaultValue: 1024 },
-    { name: 'promptTemplate', label: 'Prompt Template (optional)', type: 'textarea', rows: 8, placeholder: 'Leave blank to use the default vulnerability-explanation prompt' },
-  ];
+  const active = configurations.find((c) => c.isActive);
+  const activeSummary = !isLoading && (
+    <div className={`panel px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm ${active ? '' : 'border-amber-300 dark:border-amber-500/40'}`}>
+      <span className="inline-flex items-center gap-2">
+        <span className={`status-dot ${active ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+        {active ? <>Active: <b className="text-gray-900 dark:text-white">{active.name}</b></> : <b className="text-amber-700 dark:text-amber-400">No active provider: AI explanations and report drafting are off</b>}
+      </span>
+      {active && <span className="text-gray-500 dark:text-gray-400">Model <span className="mono">{active.model}</span> · max {active.maxOutputTokens} output tokens</span>}
+      <span className="text-gray-500 dark:text-gray-400">{configurations.length} configured</span>
+    </div>
+  );
 
-  const editFields: FormField[] = editItem
-    ? [
-        { name: 'apiKey', label: 'API Key', type: 'password', placeholder: `Current: ${editItem.apiKeyMasked} — leave blank to keep` },
-        { name: 'model', label: 'Model', type: 'text', required: true, defaultValue: editItem.model },
-        { name: 'baseUrl', label: 'Base URL (optional)', type: 'text', defaultValue: editItem.baseUrl || '' },
-        { name: 'temperature', label: 'Temperature', type: 'number', defaultValue: editItem.temperature },
-        { name: 'maxOutputTokens', label: 'Max Output Tokens', type: 'number', defaultValue: editItem.maxOutputTokens },
-        { name: 'promptTemplate', label: 'Prompt Template', type: 'textarea', rows: 8, defaultValue: editItem.promptTemplate },
-      ]
-    : [];
+  const btn = 'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border transition-colors disabled:opacity-50';
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">LLM Provider Configuration</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
-          Configure OpenRouter, Gemini, or OpenAI for automated vulnerability explanations and severity suggestions. Only one provider can be active at a time.
-        </p>
+      <div className="page-header">
+        <div>
+          <p className="page-eyebrow">AI</p>
+          <h1 className="page-title">Providers &amp; Models</h1>
+          <p className="page-subtitle max-w-3xl">
+            AI providers used for vulnerability explanations and for drafting report summaries. Add as many as you like (several models of the same provider too); the active one is used. AI calls always run in the background, so a slow provider never blocks the app.
+          </p>
+        </div>
+        <button onClick={openAdd} className="btn-primary">
+          <Plus className="w-4 h-4" /> Add Provider
+        </button>
       </div>
 
-      <DataTable
-        columns={columns}
-        data={pagedConfigurations}
-        isLoading={isLoading}
-        error={error?.message}
-        emptyState={{ title: 'No LLM providers configured', description: 'Add a provider to enable AI-assisted vulnerability explanations' }}
-        actions={{ add: { label: 'Add Provider', onClick: () => setShowAddModal(true) } }}
-        rowActions={rowActions}
-        onRetry={() => refetch()}
-        pagination={{
-          currentPage: page,
-          totalPages,
-          pageSize,
-          total: configurations.length,
-          onPageChange: setPage,
-          onPageSizeChange: (size) => { setPageSize(size); setPage(1); },
+      {activeSummary}
+
+      {isLoading ? (
+        <p className="text-sm text-gray-500">Loading…</p>
+      ) : error ? (
+        <div className="text-sm text-red-600">
+          {(error as Error).message} <button className="underline" onClick={() => refetch()}>Retry</button>
+        </div>
+      ) : configurations.length === 0 ? (
+        <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-10 text-center">
+          <p className="font-medium text-gray-900 dark:text-white">No AI provider yet</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Add one to enable AI explanations and report drafting.</p>
+          <button onClick={openAdd} className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Plus className="w-4 h-4" /> Add Provider
+          </button>
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {configurations.map((item) => {
+            const result = testResults[item.id];
+            return (
+              <div
+                key={item.id}
+                className={`panel p-4 ${item.isActive ? 'border-emerald-400 dark:border-emerald-600' : 'border-gray-200 dark:border-gray-700'}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900 dark:text-white truncate">{item.name}</h3>
+                      <span
+                        className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                          item.isActive
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        {item.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                      {PROVIDERS[item.provider]?.label ?? item.provider} · <span className="font-mono">{item.model}</span> · key {item.apiKeyMasked}
+                      {item.baseUrl && <> · <span className="font-mono">{item.baseUrl}</span></>}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      className={`${btn} border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700`}
+                      disabled={testingId !== null}
+                      onClick={() => runTest(item)}
+                    >
+                      <PlugZap className="w-3.5 h-3.5" /> {testingId === item.id ? 'Testing…' : 'Test'}
+                    </button>
+                    {item.isActive ? (
+                      <button
+                        className={`${btn} border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700`}
+                        disabled={activateMutation.isPending}
+                        onClick={() => activateMutation.mutate({ id: item.id, active: false })}
+                      >
+                        <PowerOff className="w-3.5 h-3.5" /> Deactivate
+                      </button>
+                    ) : (
+                      <button
+                        className={`${btn} border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20`}
+                        disabled={activateMutation.isPending}
+                        onClick={() => activateMutation.mutate({ id: item.id, active: true })}
+                      >
+                        <Power className="w-3.5 h-3.5" /> Activate
+                      </button>
+                    )}
+                    <button
+                      className={`${btn} border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700`}
+                      onClick={() => {
+                        setEditItem(item);
+                        setFormOpen(true);
+                      }}
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> Edit
+                    </button>
+                    <button
+                      className={`${btn} border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20`}
+                      onClick={() => setDeleteItem(item)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                  </div>
+                </div>
+                {result && (
+                  <div
+                    className={`mt-3 text-xs rounded-md px-3 py-2 flex gap-2 ${
+                      result.success ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300'
+                    }`}
+                  >
+                    {result.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                    <span className="break-all">
+                      {result.success ? `Connected in ${(result.latencyMs / 1000).toFixed(1)}s. Reply: ${result.reply}` : result.error}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ProviderFormModal
+        isOpen={formOpen}
+        editing={editItem}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => {
+          invalidate();
+          setFormOpen(false);
         }}
       />
 
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add LLM Provider" size="lg">
-        <DynamicForm
-          fields={createFields}
-          onSubmit={(data) =>
-            createMutation.mutate({
-              provider: data.provider,
-              apiKey: data.apiKey,
-              model: data.model,
-              baseUrl: data.baseUrl || null,
-              temperature: Number(data.temperature),
-              maxOutputTokens: Number(data.maxOutputTokens),
-              promptTemplate: data.promptTemplate || null,
-            })
-          }
-          submitLabel="Create"
-          onCancel={() => setShowAddModal(false)}
-          isLoading={createMutation.isPending}
-        />
-      </Modal>
-
-      <Modal isOpen={editItem !== null} onClose={() => setEditItem(null)} title={`Edit ${editItem?.provider ?? ''} Configuration`} size="lg">
-        {editItem && (
-          <DynamicForm
-            key={editItem.id}
-            fields={editFields}
-            onSubmit={(data) =>
-              updateMutation.mutate({
-                id: editItem.id,
-                dto: {
-                  apiKey: data.apiKey || null,
-                  model: data.model,
-                  baseUrl: data.baseUrl || null,
-                  temperature: Number(data.temperature),
-                  maxOutputTokens: Number(data.maxOutputTokens),
-                  promptTemplate: data.promptTemplate || null,
-                },
-              })
-            }
-            submitLabel="Update"
-            onCancel={() => setEditItem(null)}
-            isLoading={updateMutation.isPending}
-          />
-        )}
-      </Modal>
-
       <ConfirmDialog
-        isOpen={deleteId !== null}
-        onClose={() => setDeleteId(null)}
-        onConfirm={() => deleteId !== null && deleteMutation.mutate(deleteId)}
-        title="Delete LLM Provider Configuration"
-        message="Are you sure you want to delete this configuration? This action cannot be undone."
+        isOpen={deleteItem !== null}
+        onClose={() => setDeleteItem(null)}
+        onConfirm={() => deleteItem && deleteMutation.mutate(deleteItem.id)}
+        title="Delete LLM provider"
+        message={`Delete "${deleteItem?.name ?? ''}"? Its API key is removed too. This cannot be undone.`}
         confirmText="Delete"
         variant="danger"
       />

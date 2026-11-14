@@ -5,4 +5,6 @@ import { ScanTool } from '../models/scan.model';
 export interface CreateScanRequestDto {
   tools: ScanTool[];
   engagementId: number;
+  // Registered custom tools to run after the built-in ones.
+  customToolIds?: number[];
 }

@@ -9,3 +9,7 @@ dist
 .vscode
 .idea
 *.pdf
+e2e-results
+test-results
+playwright-report
+e2e/.auth

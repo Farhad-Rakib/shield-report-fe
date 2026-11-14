@@ -1,4 +1,5 @@
-export type ScanTool = 'Naabu' | 'Nuclei' | 'Reconftw';
+// 'Custom' = an admin-registered tool (Scan.customToolId); its client label is Scan.toolLabel.
+export type ScanTool = 'Naabu' | 'Nuclei' | 'Reconftw' | 'Custom';
 export type ScanStatus = 'Queued' | 'Running' | 'Completed' | 'Failed' | 'Cancelled';
 
 // Real tool identity must not be disclosed to clients — every client-facing surface renders
@@ -7,10 +8,11 @@ export const SCAN_TOOL_LABELS: Record<ScanTool, string> = {
   Naabu: 'Port Checking',
   Nuclei: 'Vulnerability Scanning',
   Reconftw: 'Reconnaissance',
+  Custom: 'Custom Check',
 };
 
-export function getScanToolLabel(tool: ScanTool): string {
-  return SCAN_TOOL_LABELS[tool];
+export function getScanToolLabel(tool: ScanTool, toolLabel?: string | null): string {
+  return toolLabel || SCAN_TOOL_LABELS[tool] || tool;
 }
 
 export interface ScanFindingRaw {
@@ -41,4 +43,7 @@ export interface Scan {
   errorMessage: string | null;
   rawOutput: string | null;
   nextScanPublicId: string | null;
+  // Client-safe label (custom tools: their client label) and the custom tool id, if any.
+  toolLabel?: string;
+  customToolId?: number | null;
 }

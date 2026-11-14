@@ -27,12 +27,12 @@ export function DraggableWidget({ id, onHide, children, className = '' }: Dragga
       className={`relative group ${className}`}
     >
       {/* Controls overlay — shown on hover */}
-      <div className="absolute top-2 left-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-2 left-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
         {/* Drag handle */}
         <button
           {...attributes}
           {...listeners}
-          className="flex items-center justify-center w-6 h-6 rounded-md bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 shadow-sm cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          className="flex items-center justify-center w-6 h-6 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
           title="Drag to reorder"
         >
           <GripVertical className="w-3.5 h-3.5" />
@@ -41,7 +41,7 @@ export function DraggableWidget({ id, onHide, children, className = '' }: Dragga
         {/* Remove button */}
         <button
           onClick={() => onHide(id)}
-          className="flex items-center justify-center w-6 h-6 rounded-md bg-white dark:bg-gray-700 border border-red-200 dark:border-red-700 shadow-sm text-red-400 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          className="flex items-center justify-center w-6 h-6 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-500/40 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
           title="Remove widget"
         >
           <X className="w-3.5 h-3.5" />
@@ -56,7 +56,7 @@ export function DraggableWidget({ id, onHide, children, className = '' }: Dragga
 /** Lightweight placeholder rendered while dragging */
 export function DragOverlayWidget({ children }: { children: React.ReactNode }) {
   return (
-    <div className="opacity-90 shadow-2xl ring-2 ring-blue-500 ring-offset-2 rounded-xl pointer-events-none">
+    <div className="opacity-95 shadow-overlay ring-2 ring-brand-500 ring-offset-2 ring-offset-gray-50 dark:ring-offset-gray-950 rounded-lg pointer-events-none">
       {children}
     </div>
   );

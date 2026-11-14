@@ -1,3 +1,4 @@
+import { TestingType, TESTING_TYPE_LABELS } from '../../../domain/models/engagement.model';
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -73,6 +74,14 @@ export const EngagementsListPage: React.FC = () => {
     { name: 'scope', label: 'Scope', type: 'textarea', placeholder: 'In-scope assets, exclusions, rules of engagement...' },
     { name: 'startDate', label: 'Start Date', type: 'text', placeholder: 'YYYY-MM-DD' },
     { name: 'endDate', label: 'End Date', type: 'text', placeholder: 'YYYY-MM-DD' },
+    {
+      name: 'testingType',
+      label: 'Testing Type (report wording)',
+      type: 'select',
+      required: true,
+      defaultValue: 'White',
+      options: (Object.keys(TESTING_TYPE_LABELS) as TestingType[]).map((t) => ({ label: TESTING_TYPE_LABELS[t], value: t })),
+    },
   ];
 
   const handleCreate = (data: Record<string, any>) => {
@@ -83,6 +92,7 @@ export const EngagementsListPage: React.FC = () => {
       scope: data.scope || null,
       startDate: data.startDate || null,
       endDate: data.endDate || null,
+      testingType: (data.testingType as TestingType) || 'White',
     });
   };
 

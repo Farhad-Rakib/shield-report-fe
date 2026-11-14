@@ -23,6 +23,17 @@ export const Permissions = {
   ClientAssetsUpdate: 'client-assets.update',
   ClientAssetsDelete: 'client-assets.delete',
   ClientAssetsAuthorizeForScanning: 'client-assets.authorize-for-scanning',
+  // Scan authorization records (approval, evidence, validity window, allowed tools).
+  ScanAuthorizationsRead: 'scan-authorizations.read',
+  ScanAuthorizationsManage: 'scan-authorizations.manage',
+  // Audit trail (data changes + security events).
+  AuditLogsRead: 'audit-logs.read',
+  // Scan Tools settings page.
+  ScanToolsManage: 'scan-tools.manage',
+  CustomScanToolsManage: 'custom-scan-tools.manage',
+  // Email approved reports to the client; client-portal access to approved reports.
+  VulnerabilityReportsSend: 'vulnerability-reports.send',
+  ClientReportsRead: 'client-reports.read',
   ScansRead: 'scans.read',
   ScansCreate: 'scans.create',
   ScansCancel: 'scans.cancel',

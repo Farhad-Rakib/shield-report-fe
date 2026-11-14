@@ -1,3 +1,5 @@
+import { PortalReportsPage } from '../../features/portal/pages/PortalReportsPage';
+import { ScanToolsPage } from '../../features/scan-tools/pages/ScanToolsPage';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { DashboardLayout } from '../layouts/DashboardLayout';
@@ -19,7 +21,10 @@ import { MenuPage } from '../../features/menu/pages/MenuPage';
 import { PreferencesPage } from '../../features/preferences/pages/PreferencesPage';
 import { ProfilePage } from '../../features/profile/pages/ProfilePage';
 import { SiteSettingsPage } from '../../features/site-settings/pages/SiteSettingsPage';
+import { AuditLogPage } from '../../features/audit/pages/AuditLogPage';
 import { LlmConfigurationPage } from '../../features/llm-configuration/pages/LlmConfigurationPage';
+import { LlmPromptsPage } from '../../features/llm-prompts/pages/LlmPromptsPage';
+import { CustomToolsPage } from '../../features/custom-tools/pages/CustomToolsPage';
 import { ReportTemplatesPage } from '../../features/report-templates/pages/ReportTemplatesPage';
 import { ClientOrganizationsPage } from '../../features/client-organizations/pages/ClientOrganizationsPage';
 import { ClientAssetsPage } from '../../features/client-assets/pages/ClientAssetsPage';
@@ -139,6 +144,38 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'scan-tools',
+        element: (
+          <PermissionGuard permissions={[Permissions.ScanToolsManage]}>
+            <ScanToolsPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'audit-logs',
+        element: (
+          <PermissionGuard permissions={[Permissions.AuditLogsRead]}>
+            <AuditLogPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'llm-prompts',
+        element: (
+          <PermissionGuard permissions={[Permissions.LlmProviderConfigurationsRead]}>
+            <LlmPromptsPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'custom-tools',
+        element: (
+          <PermissionGuard permissions={[Permissions.CustomScanToolsManage]}>
+            <CustomToolsPage />
+          </PermissionGuard>
+        ),
+      },
+      {
         path: 'llm-providers',
         element: (
           <PermissionGuard permissions={[Permissions.LlmProviderConfigurationsRead]}>
@@ -245,6 +282,7 @@ export const router = createBrowserRouter([
       { path: 'vulnerabilities/:id', element: <PortalVulnerabilityDetailPage /> },
       { path: 'scans', element: <PortalScansListPage /> },
       { path: 'scans/:publicId', element: <PortalScanDetailPage /> },
+      { path: 'reports', element: <PortalReportsPage /> },
     ],
   },
   { path: '/403', element: <ForbiddenPage /> },
