@@ -107,7 +107,7 @@ export function FindingsReportPage() {
   };
 
   const selectClient = (clientId: number) => {
-    filters.setValues({ ...filters.values, clientOrganizationId: String(clientId), clientAssetId: '' });
+    filters.setValues({ ...filters.values, clientOrganizationId: String(clientId), clientAssetId: '', engagementId: '' });
   };
 
   const handleReset = () => {
@@ -118,17 +118,22 @@ export function FindingsReportPage() {
 
   // One-line summary of the filters being exported (names from the loaded report when present).
   const filterDescription = useMemo(() => {
-    const { clientOrganizationId, clientAssetId, from, to } = reportParams;
+    const { clientOrganizationId, clientAssetId, engagementId, from, to } = reportParams;
     const client = clientOrganizationId
       ? data?.clients.find((c) => c.id === clientOrganizationId)?.name ?? `Client #${clientOrganizationId}`
       : 'All clients';
     const asset = clientAssetId
       ? data?.clients.flatMap((c) => c.assets).find((a) => a.id === clientAssetId)?.name ?? `Asset #${clientAssetId}`
       : 'All assets';
+    const engagement = engagementId
+      ? data?.clients.flatMap((c) => c.assets).flatMap((a) => a.vulnerabilities).find((v) => v.engagementId === engagementId)?.engagementTitle
+        ?? `Engagement #${engagementId}`
+      : 'All engagements';
     const period = from && to ? `${from} to ${to}` : from ? `from ${from}` : to ? `until ${to}` : 'any date';
     return [
       client,
       asset,
+      engagement,
       `tested ${period}`,
       severity || 'all severities',
       patchStatus ? PATCH_STATUS_LABEL[patchStatus] : 'all statuses',
@@ -168,6 +173,7 @@ export function FindingsReportPage() {
         <FilterCard
           values={filters.values}
           onChange={filters.setValues}
+          showEngagement
           onReset={handleReset}
           dateLabel="Tested"
           extraActive={Boolean(severity || patchStatus)}

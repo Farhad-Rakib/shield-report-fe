@@ -5,6 +5,8 @@
 export interface ListFilterQuery {
   clientOrganizationId?: number;
   clientAssetId?: number;
+  /** Only sent by pages that show the engagement filter (vulnerabilities, findings report). */
+  engagementId?: number;
   from?: string;
   to?: string;
 }

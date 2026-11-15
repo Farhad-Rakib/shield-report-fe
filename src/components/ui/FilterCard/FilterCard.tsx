@@ -3,17 +3,19 @@ import { useQuery } from '@tanstack/react-query';
 import { Filter, RotateCcw } from 'lucide-react';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
 import { clientAssetApi } from '../../../core/api/services/client-asset.api';
+import { engagementApi } from '../../../core/api/services/engagement.api';
 import { ListFilterQuery } from '../../../domain/dto/list-filter.dto';
 
 /** Values held by a list page's filter card. Empty string = no filter. */
 export interface ListFilterValues {
   clientOrganizationId: string;
   clientAssetId: string;
+  engagementId: string;
   from: string; // yyyy-MM-dd
   to: string;   // yyyy-MM-dd
 }
 
-export const EMPTY_LIST_FILTERS: ListFilterValues = { clientOrganizationId: '', clientAssetId: '', from: '', to: '' };
+export const EMPTY_LIST_FILTERS: ListFilterValues = { clientOrganizationId: '', clientAssetId: '', engagementId: '', from: '', to: '' };
 
 /** Query params for the API: only the filters that are set, ids as numbers. */
 export type ListFilterParams = ListFilterQuery;
@@ -22,6 +24,7 @@ export function toListFilterParams(values: ListFilterValues): ListFilterParams {
   return {
     clientOrganizationId: values.clientOrganizationId ? Number(values.clientOrganizationId) : undefined,
     clientAssetId: values.clientAssetId ? Number(values.clientAssetId) : undefined,
+    engagementId: values.engagementId ? Number(values.engagementId) : undefined,
     from: values.from || undefined,
     to: values.to || undefined,
   };
@@ -31,7 +34,7 @@ export function toListFilterParams(values: ListFilterValues): ListFilterParams {
 export function useListFilters(initial: Partial<ListFilterValues> = {}) {
   const [values, setValues] = useState<ListFilterValues>({ ...EMPTY_LIST_FILTERS, ...initial });
   const params = useMemo(() => toListFilterParams(values), [values]);
-  const isActive = Boolean(values.clientOrganizationId || values.clientAssetId || values.from || values.to);
+  const isActive = Boolean(values.clientOrganizationId || values.clientAssetId || values.engagementId || values.from || values.to);
   return { values, setValues, params, isActive, reset: () => setValues(EMPTY_LIST_FILTERS) };
 }
 
@@ -42,6 +45,9 @@ interface FilterCardProps {
   /** Hide the client/asset pickers (e.g. a page already scoped to one client). */
   showClient?: boolean;
   showAsset?: boolean;
+  /** Engagement picker beside the asset (off by default): engagements the user can see,
+   *  narrowed to the chosen client and asset. */
+  showEngagement?: boolean;
   showDateRange?: boolean;
   /** Label for the date range, e.g. "Created" or "Scanned". */
   dateLabel?: string;
@@ -52,8 +58,8 @@ interface FilterCardProps {
 }
 
 /**
- * Standard filter block for list pages: client, asset (loaded for the chosen client) and a date
- * range. Changing the client clears the asset. Lists are scoped server-side, so the pickers only
+ * Standard filter block for list pages: client, asset (loaded for the chosen client), optionally
+ * engagement, and a date range. Changing the client clears the asset and the engagement. Lists are scoped server-side, so the pickers only
  * offer clients the user can see.
  */
 export function FilterCard({
@@ -62,6 +68,7 @@ export function FilterCard({
   onReset,
   showClient = true,
   showAsset = true,
+  showEngagement = false,
   showDateRange = true,
   dateLabel = 'Date',
   children,
@@ -83,8 +90,16 @@ export function FilterCard({
   });
   const assets = assetData?.data ?? [];
 
+  const assetId = values.clientAssetId ? Number(values.clientAssetId) : undefined;
+  const { data: engagementData, isFetching: engagementsLoading } = useQuery({
+    queryKey: ['engagements-picker', clientId, assetId],
+    queryFn: () => engagementApi.getEngagements({ clientOrganizationId: clientId ?? undefined, clientAssetId: assetId, pageSize: 100 }),
+    enabled: showEngagement,
+  });
+  const engagements = engagementData?.data ?? [];
+
   const set = (patch: Partial<ListFilterValues>) => onChange({ ...values, ...patch });
-  const active = extraActive || Boolean(values.clientOrganizationId || values.clientAssetId || values.from || values.to);
+  const active = extraActive || Boolean(values.clientOrganizationId || values.clientAssetId || values.engagementId || values.from || values.to);
 
   return (
     <div className="panel px-3 py-2.5">
@@ -95,10 +110,11 @@ export function FilterCard({
         </div>
         {showClient && (
           <div>
-            <label className="label">Client</label>
+            <label className="label" htmlFor="filter-client">Client</label>
             <select
+              id="filter-client"
               value={values.clientOrganizationId}
-              onChange={(e) => set({ clientOrganizationId: e.target.value, clientAssetId: '' })}
+              onChange={(e) => set({ clientOrganizationId: e.target.value, clientAssetId: '', engagementId: '' })}
               className="input w-48"
             >
               <option value="">All clients</option>
@@ -110,8 +126,9 @@ export function FilterCard({
         )}
         {showAsset && (
           <div>
-            <label className="label">Asset</label>
+            <label className="label" htmlFor="filter-asset">Asset</label>
             <select
+              id="filter-asset"
               value={values.clientAssetId}
               onChange={(e) => set({ clientAssetId: e.target.value })}
               className="input w-52"
@@ -124,6 +141,28 @@ export function FilterCard({
               {assets.map((asset) => (
                 <option key={asset.id} value={asset.id}>{asset.name} ({asset.identifier})</option>
               ))}
+            </select>
+          </div>
+        )}
+        {showEngagement && (
+          <div>
+            <label className="label" htmlFor="filter-engagement">Engagement</label>
+            <select
+              id="filter-engagement"
+              value={values.engagementId}
+              onChange={(e) => set({ engagementId: e.target.value })}
+              className="input w-56"
+            >
+              <option value="">{engagementsLoading && engagements.length === 0 ? 'Loading…' : 'All engagements'}</option>
+              {engagements.map((eng) => (
+                <option key={eng.id} value={eng.id}>
+                  {clientId === null ? `${eng.title} (${eng.clientOrganizationName})` : eng.title}
+                </option>
+              ))}
+              {/* Keep a chosen engagement visible even if the narrowed list no longer contains it. */}
+              {values.engagementId && !engagements.some((eng) => String(eng.id) === values.engagementId) && (
+                <option value={values.engagementId}>Engagement #{values.engagementId}</option>
+              )}
             </select>
           </div>
         )}

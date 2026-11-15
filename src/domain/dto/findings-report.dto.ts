@@ -6,6 +6,7 @@ import type { ReportTemplateField } from '../models/report-template.model';
 export interface GetFindingsReportRequestDto {
   clientOrganizationId?: number;
   clientAssetId?: number;
+  engagementId?: number;
   from?: string;
   to?: string;
   severity?: Severity;

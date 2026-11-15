@@ -25,7 +25,8 @@ const state: { engagementPath?: string; templateId?: number; findingScanPath?: s
 
 /** The page's client-organization picker, once it lists our org (it renders after orgs load). */
 async function pickOrg(page: Page) {
-  await page.locator('select', { has: page.locator('option', { hasText: names.org() }) }).selectOption({ label: names.org() });
+  // The list filter card's Client picker (the Engagement picker also mentions org names).
+  await page.locator('#filter-client').selectOption({ label: names.org() });
 }
 
 async function addCustomTool(page: Page, o: { name: string; label: string; args: string[]; output: string; severity?: string }) {

@@ -94,6 +94,7 @@ export const VulnerabilitiesListPage: React.FC = () => {
       <FilterCard
         values={filters.values}
         onChange={filters.setValues}
+        showEngagement
         onReset={() => {
           filters.reset();
           setSeverity('');
