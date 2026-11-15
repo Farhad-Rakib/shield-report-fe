@@ -1,14 +1,16 @@
 import { HtmlTemplateEditorModal } from '../components/HtmlTemplateEditorModal';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Trash2, Upload, FileX, FileText, Star, Code, Braces } from 'lucide-react';
+import { Pencil, Trash2, Upload, FileX, FileText, Code, Braces } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
 import { reportTemplateApi } from '../../../core/api/services/report-template.api';
-import { BUILT_IN_TEMPLATE_LABELS, ReportTemplate } from '../../../domain/models/report-template.model';
+import { BUILT_IN_TEMPLATE_LABELS, REPORT_TEMPLATE_KIND_LABELS, ReportTemplate, ReportTemplateKind } from '../../../domain/models/report-template.model';
+
+const isFindingsSummary = (t: ReportTemplate) => t.kind === 'FindingsSummary';
 
 const TOKEN_GROUPS: { label: string; tokens: string[] }[] = [
   { label: 'Simple (anywhere, incl. table cells)', tokens: ['{{ClientName}}', '{{CompanyDisplayName}}', '{{ReportVersion}}', '{{EngagementDateRange}}', '{{TotalFindingsCount}}', '{{SeverityBreakdown}}', '{{GeneratedDate}}'] },
@@ -45,7 +47,7 @@ export const ReportTemplatesPage: React.FC = () => {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['report-templates'] });
 
   const createMutation = useMutation({
-    mutationFn: (dto: { name: string; companyDisplayName: string }) => reportTemplateApi.create(dto),
+    mutationFn: (dto: { name: string; companyDisplayName: string; kind: ReportTemplateKind }) => reportTemplateApi.create(dto),
     onSuccess: () => {
       invalidate();
       toast.success('Report template created successfully');
@@ -95,15 +97,6 @@ export const ReportTemplatesPage: React.FC = () => {
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to remove custom template'),
   });
 
-  const setDefaultMutation = useMutation({
-    mutationFn: (id: number) => reportTemplateApi.setDefault(id),
-    onSuccess: () => {
-      invalidate();
-      toast.success('Default report template updated');
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to set default template'),
-  });
-
   const [htmlItem, setHtmlItem] = useState<ReportTemplate | null>(null);
   const [studioTab, setStudioTab] = useState<'html' | 'fields' | 'preview'>('html');
 
@@ -115,7 +108,7 @@ export const ReportTemplatesPage: React.FC = () => {
       render: (_, item) => (
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span className="text-gray-900 dark:text-gray-100">{item.name}</span>
-          {item.builtInTestingType ? (
+          {isFindingsSummary(item) ? null : item.builtInTestingType ? (
             <span className="badge-info" title="Falls back to the built-in SELISE template for this testing type while it has no custom HTML">
               {BUILT_IN_TEMPLATE_LABELS[item.builtInTestingType]}
             </span>
@@ -125,8 +118,20 @@ export const ReportTemplatesPage: React.FC = () => {
         </span>
       ),
     },
+    {
+      key: 'kind',
+      label: 'Kind',
+      sortable: true,
+      render: (_, item) => (
+        <span
+          className={isFindingsSummary(item) ? 'badge-success' : 'badge-neutral'}
+          title={isFindingsSummary(item) ? 'Used by Export PDF on the Findings Report' : 'Used when generating an engagement report'}
+        >
+          {REPORT_TEMPLATE_KIND_LABELS[item.kind] ?? item.kind}
+        </span>
+      ),
+    },
     { key: 'companyDisplayName', label: 'Company Display Name' },
-    { key: 'isDefault', label: 'Default', render: (value: boolean) => (value ? <span className="badge-brand">Default</span> : <span className="text-xs text-gray-400">—</span>) },
     {
       key: 'customFields',
       label: 'Dynamic fields',
@@ -150,7 +155,9 @@ export const ReportTemplatesPage: React.FC = () => {
             HTML engine
             {item.hasCustomHtmlTemplate
               ? ' — custom HTML'
-              : item.builtInTestingType
+              : isFindingsSummary(item)
+                ? ' — built-in Findings summary template'
+                : item.builtInTestingType
                 ? ` — built-in ${item.builtInTestingType} Box template`
                 : " — built-in template matching the engagement's testing type"}
           </span>
@@ -159,16 +166,23 @@ export const ReportTemplatesPage: React.FC = () => {
   ];
 
   const rowActions: RowAction<ReportTemplate>[] = [
-    { icon: Star, label: 'Set as Default', onClick: (item) => setDefaultMutation.mutate(item.id), variant: 'success', show: (item) => !item.isDefault },
     { icon: Code, label: 'Template studio: HTML, upload, preview', onClick: (item) => { setStudioTab('html'); setHtmlItem(item); }, variant: 'primary' },
     { icon: Braces, label: 'Dynamic fields', onClick: (item) => { setStudioTab('fields'); setHtmlItem(item); }, variant: 'primary' },
-    { icon: Upload, label: 'Upload Word Document (legacy engine)', onClick: (item) => setUploadItem(item), variant: 'secondary' },
+    { icon: Upload, label: 'Upload Word Document (legacy engine)', onClick: (item) => setUploadItem(item), variant: 'secondary', show: (item) => !isFindingsSummary(item) },
     { icon: FileX, label: 'Remove Custom Template', onClick: (item) => setClearItem(item), variant: 'danger', show: (item) => item.hasCustomDocxTemplate },
     { icon: Pencil, label: 'Edit', onClick: (item) => setEditItem(item), variant: 'primary' },
     { icon: Trash2, label: 'Delete', onClick: (item) => setDeleteId(item.id), variant: 'danger' },
   ];
 
   const createFields: FormField[] = [
+    {
+      name: 'kind',
+      label: 'Kind',
+      type: 'select',
+      required: true,
+      defaultValue: 'Engagement',
+      options: (Object.keys(REPORT_TEMPLATE_KIND_LABELS) as ReportTemplateKind[]).map((k) => ({ label: REPORT_TEMPLATE_KIND_LABELS[k], value: k })),
+    },
     { name: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. White Box Testing — Client Standard' },
     { name: 'companyDisplayName', label: 'Company Display Name', type: 'text', required: true },
   ];
@@ -185,7 +199,7 @@ export const ReportTemplatesPage: React.FC = () => {
           <p className="page-eyebrow">Reporting</p>
           <h1 className="page-title">Report Templates</h1>
           <p className="page-subtitle">
-            Each template is Handlebars HTML that becomes both the PDF and the Word file. Open the template studio to edit or upload HTML, define dynamic fields filled per report, and preview with sample data. Uploading a Word document instead switches that template to the legacy engine (Word only, no preview).
+            Each template is Handlebars HTML that becomes both the PDF and the Word file. Open the template studio to edit or upload HTML, define dynamic fields filled per report, and preview with sample data. Uploading a Word document instead switches that template to the legacy engine (Word only, no preview). Engagement report templates are used when generating an engagement's report; Findings summary templates are used by Export PDF on the Findings Report.
           </p>
         </div>
       </div>
@@ -212,7 +226,9 @@ export const ReportTemplatesPage: React.FC = () => {
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Add Report Template" size="md">
         <DynamicForm
           fields={createFields}
-          onSubmit={(data) => createMutation.mutate({ name: data.name, companyDisplayName: data.companyDisplayName })}
+          onSubmit={(data) =>
+            createMutation.mutate({ name: data.name, companyDisplayName: data.companyDisplayName, kind: (data.kind as ReportTemplateKind) || 'Engagement' })
+          }
           submitLabel="Create"
           onCancel={() => setShowAddModal(false)}
           isLoading={createMutation.isPending}

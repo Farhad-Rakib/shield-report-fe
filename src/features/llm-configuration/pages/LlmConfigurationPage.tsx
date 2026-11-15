@@ -189,7 +189,7 @@ const ProviderFormModal: React.FC<{
         {!editing && catalog.length > 0 && (
           <label className="block text-sm text-gray-700 dark:text-gray-300">
             Start from provider list <span className="text-gray-400">(optional)</span>
-            <select defaultValue="" onChange={(e) => applyCatalogItem(e.target.value)} className={inputClass}>
+            <select aria-label="Start from provider list" defaultValue="" onChange={(e) => applyCatalogItem(e.target.value)} className={inputClass}>
               <option value="">Choose a provider to prefill the form…</option>
               {catalog.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -207,6 +207,7 @@ const ProviderFormModal: React.FC<{
           <label className="block text-sm text-gray-700 dark:text-gray-300">
             Provider
             <select
+              aria-label="Provider"
               value={form.provider}
               disabled={!!editing}
               onChange={(e) => set('provider', e.target.value as LlmProvider)}

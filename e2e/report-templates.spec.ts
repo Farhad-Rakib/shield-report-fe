@@ -66,7 +66,7 @@ test.describe('report template studio', () => {
     const studio = dialog(page, `Template studio · ${name()}`);
     const editor = studio.getByLabel('Template HTML');
     await expect(editor).not.toHaveValue('');
-    await expect(studio.getByText(/Built-in White \/ Gray \/ Black Box template/)).toBeVisible();
+    await expect(studio.getByText(/Built-in template \(White Box shown/)).toBeVisible();
     const before = await editor.inputValue();
 
     // Insert at the very start so the result is easy to check.

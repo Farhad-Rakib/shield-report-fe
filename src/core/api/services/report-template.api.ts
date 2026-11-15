@@ -1,6 +1,6 @@
 import { BaseRepository } from '../base.repository';
 import { ApiResponse } from '../../../domain/dto/auth.dto';
-import { ReportTemplate, ReportTemplateField, ReportTemplateHtml, ReportTemplateVariable } from '../../../domain/models/report-template.model';
+import { ReportTemplate, ReportTemplateField, ReportTemplateHtml, ReportTemplateKind, ReportTemplateVariable } from '../../../domain/models/report-template.model';
 import { CreateReportTemplateRequestDto, UpdateReportTemplateRequestDto } from '../../../domain/dto/report.dto';
 
 class ReportTemplateApi extends BaseRepository {
@@ -45,12 +45,6 @@ class ReportTemplateApi extends BaseRepository {
     return res.data;
   }
 
-  async setDefault(id: number): Promise<ReportTemplate> {
-    const res = await this.post<ApiResponse<ReportTemplate>>(`/${id}/set-default`);
-    if (!res.success) throw new Error(res.message);
-    return res.data;
-  }
-
   // HTML (Handlebars) template — the engine that produces both PDF and Word.
   async getHtml(id: number): Promise<ReportTemplateHtml> {
     const res = await this.get<ApiResponse<ReportTemplateHtml>>(`/${id}/html`);
@@ -91,8 +85,9 @@ class ReportTemplateApi extends BaseRepository {
     return res.data;
   }
 
-  async variables(): Promise<ReportTemplateVariable[]> {
-    const res = await this.get<ApiResponse<ReportTemplateVariable[]>>('/variables');
+  // Handlebars variables documented for a template kind (engagement report or findings summary).
+  async variables(kind: ReportTemplateKind = 'Engagement'): Promise<ReportTemplateVariable[]> {
+    const res = await this.get<ApiResponse<ReportTemplateVariable[]>>('/variables', { params: { kind } });
     if (!res.success) throw new Error(res.message);
     return res.data;
   }

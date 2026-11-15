@@ -9,7 +9,7 @@ import { ReportTemplate, ReportTemplateField, ReportTemplateFieldType } from '..
 // Which built-in a template falls back to: its own testing type, or White in the studio for a
 // user-created template (at generation time it follows the engagement's testing type).
 const builtInName = (template: ReportTemplate | null) =>
-  template?.builtInTestingType ? `${template.builtInTestingType} Box` : 'White Box';
+  template?.kind === 'FindingsSummary' ? 'Findings summary' : template?.builtInTestingType ? `${template.builtInTestingType} Box` : 'White Box';
 
 type ApiError = { response?: { data?: { message?: string } }; message?: string };
 const errorMessage = (err: unknown, fallback: string) => {
@@ -38,7 +38,10 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
     queryFn: () => reportTemplateApi.getHtml(template!.id),
     enabled: !!template,
   });
-  const { data: variables = [] } = useQuery({ queryKey: ['report-template-variables'], queryFn: () => reportTemplateApi.variables(), enabled: !!template, staleTime: Infinity });
+  // Variables differ per kind (engagement report vs findings summary).
+  const kind = template?.kind ?? 'Engagement';
+  const isFindingsSummary = kind === 'FindingsSummary';
+  const { data: variables = [] } = useQuery({ queryKey: ['report-template-variables', kind], queryFn: () => reportTemplateApi.variables(kind), enabled: !!template, staleTime: Infinity });
 
   useEffect(() => {
     if (data) setContent(data.htmlContent);
@@ -155,10 +158,10 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
           <span className="text-xs text-gray-500 dark:text-gray-400 pb-2">
             {data?.isCustom
               ? 'Custom HTML'
-              : template?.builtInTestingType
+              : isFindingsSummary || template?.builtInTestingType
                 ? `Built-in ${builtInName(template)} template`
                 : "Built-in template (White Box shown; follows the engagement's testing type)"}{' '}
-            · one template makes both PDF and Word
+            {isFindingsSummary ? '· used by Export PDF on the Findings Report' : '· one template makes both PDF and Word'}
           </span>
         </div>
 
@@ -227,7 +230,11 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
         {tab === 'fields' && (
           <div className="space-y-3">
             <p className="text-xs text-gray-600 dark:text-gray-400">
-              Fields you define here appear under <b>Edit Sections</b> on every report made with this template, and in the template as <code className="code-chip">{'{{Custom.key}}'}</code>.
+              {isFindingsSummary ? (
+                <>Fields you define here are asked for in the <b>Export PDF</b> dialog of the Findings Report, and appear in the template as <code className="code-chip">{'{{Custom.key}}'}</code>.</>
+              ) : (
+                <>Fields you define here appear under <b>Edit Sections</b> on every report made with this template, and in the template as <code className="code-chip">{'{{Custom.key}}'}</code>.</>
+              )}{' '}
               The default value is used until someone fills the field in.
             </p>
             {fields.length === 0 && <p className="text-sm text-gray-500">No dynamic fields.</p>}
@@ -265,7 +272,7 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
                   <input className="input" value={f.help ?? ''} onChange={(e) => updateField(i, { help: e.target.value })} />
                 </label>
                 <label className="inline-flex items-center gap-2 text-xs md:col-span-4">
-                  <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} /> Required before approval (shown as required in Edit Sections)
+                  <input type="checkbox" checked={f.required} onChange={(e) => updateField(i, { required: e.target.checked })} /> {isFindingsSummary ? 'Required before export' : 'Required before approval (shown as required in Edit Sections)'}
                 </label>
               </div>
             ))}

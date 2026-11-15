@@ -91,7 +91,7 @@ export interface CustomTool {
 export interface ReportTemplate {
   id: number;
   name: string;
-  isDefault: boolean;
+  kind: 'Engagement' | 'FindingsSummary';
   customFields: { key: string }[];
 }
 

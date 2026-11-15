@@ -8,6 +8,7 @@ import { llmConfigurationApi } from '../../../core/api/services/llm-configuratio
 import { useAuthStore } from '../../auth/store/auth.store';
 import { Permissions } from '../../../core/constants/permissions';
 import { Report, ReportTemplateOption } from '../../../domain/models/report.model';
+import { ReportTemplateField } from '../../../domain/models/report-template.model';
 import { TestingType, TESTING_TYPE_LABELS } from '../../../domain/models/engagement.model';
 
 type ApiError = { response?: { data?: { message?: string } }; message?: string };
@@ -18,14 +19,20 @@ const errorMessage = (err: unknown, fallback: string) => {
 
 const TESTING_TYPES: TestingType[] = ['White', 'Gray', 'Black'];
 
-// Same rule as the backend when no template is given: the built-in template of the testing type,
-// then the default one, then the first.
-const pickTemplate = (templates: ReportTemplateOption[], testingType: TestingType) =>
-  templates.find((t) => t.builtInTestingType === testingType) ?? templates.find((t) => t.isDefault) ?? templates[0];
+// Templates offered for a testing type: the built-in for that type plus admin-created ones.
+const templatesFor = (templates: ReportTemplateOption[], testingType: TestingType) =>
+  templates.filter((t) => !t.builtInTestingType || t.builtInTestingType === testingType);
 
-// Generate Report dialog: pick template, testing type and options, see a live preview of the
-// result (nothing is saved until Generate), then generate. AI drafting of the summary sections
-// runs in the background after generation, so the button never waits on the LLM.
+const defaultsFor = (fields: ReportTemplateField[]) =>
+  Object.fromEntries(fields.map((f) => [f.key, f.defaultValue ?? '']));
+
+const missingRequired = (fields: ReportTemplateField[], values: Record<string, string>) =>
+  fields.filter((f) => f.required && !(values[f.key] ?? '').trim());
+
+// Generate Report dialog. There is no default template: choose the testing type, then a template
+// for it, fill in that template's dynamic fields, check the live preview (nothing is saved until
+// Generate), then generate. AI drafting of the summary sections runs in the background after
+// generation, so the button never waits on the LLM.
 export const GenerateReportModal: React.FC<{
   isOpen: boolean;
   engagementId: number;
@@ -35,8 +42,7 @@ export const GenerateReportModal: React.FC<{
 }> = ({ isOpen, engagementId, engagementTestingType, onClose, onGenerated }) => {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const [templateId, setTemplateId] = useState<number | null>(null);
-  // Once the user picks a template themselves, changing the testing type no longer switches it.
-  const [templatePicked, setTemplatePicked] = useState(false);
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [testingType, setTestingType] = useState<TestingType>(engagementTestingType);
   const [showToolNames, setShowToolNames] = useState(false);
   const [draftWithAi, setDraftWithAi] = useState(true);
@@ -63,7 +69,7 @@ export const GenerateReportModal: React.FC<{
   useEffect(() => {
     if (!isOpen) return;
     setTemplateId(null);
-    setTemplatePicked(false);
+    setFieldValues({});
     setTestingType(engagementTestingType);
     setShowToolNames(false);
     setDraftWithAi(true);
@@ -71,13 +77,25 @@ export const GenerateReportModal: React.FC<{
     setPreviewError(null);
   }, [isOpen, engagementTestingType]);
 
-  useEffect(() => {
-    if (isOpen && !templatePicked && templates.length > 0) {
-      setTemplateId(pickTemplate(templates, testingType).id);
-    }
-  }, [isOpen, templates, templatePicked, testingType]);
+  const available = templatesFor(templates, testingType);
+  const selected = available.find((t) => t.id === templateId) ?? null;
+  const fields = selected?.customFields ?? [];
+  const missing = missingRequired(fields, fieldValues);
 
-  const selected = templates.find((t) => t.id === templateId) ?? null;
+  const chooseTemplate = (id: number | null) => {
+    setTemplateId(id);
+    const t = templates.find((x) => x.id === id);
+    setFieldValues(t ? defaultsFor(t.customFields ?? []) : {});
+    setPreviewHtml(null);
+    setPreviewError(null);
+  };
+
+  // A template that doesn't belong to the new testing type is dropped.
+  const changeTestingType = (type: TestingType) => {
+    setTestingType(type);
+    const current = templates.find((t) => t.id === templateId);
+    if (current?.builtInTestingType && current.builtInTestingType !== type) chooseTemplate(null);
+  };
 
   const loadPreview = async () => {
     if (!selected) return;
@@ -90,7 +108,7 @@ export const GenerateReportModal: React.FC<{
     setPreviewLoading(true);
     setPreviewError(null);
     try {
-      const html = await reportApi.previewNew(engagementId, { templateId: selected.id, testingType, showToolNames });
+      const html = await reportApi.previewNew(engagementId, { templateId: selected.id, testingType, showToolNames, customFieldValues: fieldValues });
       if (seq === previewSeq.current) setPreviewHtml(html);
     } catch (err) {
       if (seq === previewSeq.current) setPreviewError(errorMessage(err, 'Preview failed'));
@@ -102,13 +120,13 @@ export const GenerateReportModal: React.FC<{
   // Refresh the preview whenever an option that changes the output changes (debounced).
   useEffect(() => {
     if (!isOpen || !selected) return;
-    const handle = window.setTimeout(loadPreview, 400);
+    const handle = window.setTimeout(loadPreview, 600);
     return () => window.clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, templateId, testingType, showToolNames, selected?.engine]);
+  }, [isOpen, templateId, testingType, showToolNames, selected?.engine, fieldValues]);
 
   const generateMutation = useMutation({
-    mutationFn: () => reportApi.generate(engagementId, { templateId, testingType, showToolNames, draftWithAi }),
+    mutationFn: () => reportApi.generate(engagementId, { templateId, testingType, showToolNames, draftWithAi, customFieldValues: fieldValues }),
     onSuccess: (report) => {
       toast.success(
         report.narrativeStatus === 'Drafting'
@@ -129,40 +147,8 @@ export const GenerateReportModal: React.FC<{
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
         <div className="space-y-4">
           <div>
-            <span className={label}>Template</span>
-            {templatesLoading ? (
-              <p className="text-sm text-gray-500">Loading…</p>
-            ) : templates.length === 0 ? (
-              <p className="text-sm text-amber-600">No report template is configured.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {templates.map((t) => (
-                  <label
-                    key={t.id}
-                    className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
-                      t.id === templateId
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-                    }`}
-                  >
-                    <input type="radio" className="mt-0.5" checked={t.id === templateId} onChange={() => { setTemplateId(t.id); setTemplatePicked(true); }} />
-                    <span className="min-w-0">
-                      <span className="block font-medium text-gray-900 dark:text-white truncate">{t.name}</span>
-                      <span className="block text-xs text-gray-500 dark:text-gray-400">
-                        {t.builtInTestingType && `${t.builtInTestingType} Box built-in · `}
-                        {t.isDefault && 'Default · '}
-                        {t.engine === 'Word' ? 'Word template (no preview)' : t.isCustomHtml ? 'Custom HTML · PDF + Word' : t.builtInTestingType ? 'PDF + Word' : 'Built-in · PDF + Word'}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <span className={label}>Testing type</span>
-            <select value={testingType} onChange={(e) => setTestingType(e.target.value as TestingType)} className={select}>
+            <label className={label} htmlFor="gr-testing-type">1. Testing type</label>
+            <select id="gr-testing-type" value={testingType} onChange={(e) => changeTestingType(e.target.value as TestingType)} className={select}>
               {TESTING_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {TESTING_TYPE_LABELS[t]}
@@ -173,6 +159,76 @@ export const GenerateReportModal: React.FC<{
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Generating also changes the engagement's testing type.</p>
             )}
           </div>
+
+          <div>
+            <label className={label} htmlFor="gr-template">2. Report template</label>
+            {templatesLoading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : available.length === 0 ? (
+              <p className="text-sm text-amber-600 dark:text-amber-400">No report template for {TESTING_TYPE_LABELS[testingType]}. Add one under Reporting → Report Templates.</p>
+            ) : (
+              <>
+                <select
+                  id="gr-template"
+                  value={templateId ?? ''}
+                  onChange={(e) => chooseTemplate(e.target.value ? Number(e.target.value) : null)}
+                  className={select}
+                >
+                  <option value="">Choose a template…</option>
+                  {available.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {selected && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {selected.builtInTestingType ? `${selected.builtInTestingType} Box built-in` : 'Custom template'}
+                    {' · '}
+                    {selected.engine === 'Word' ? 'Word template (no preview)' : selected.isCustomHtml ? 'Edited HTML · PDF + Word' : 'PDF + Word'}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          {selected && (
+            <div>
+              <span className={label}>3. Report details</span>
+              {fields.length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">This template has no dynamic fields. Add them in the template studio if you need any.</p>
+              ) : (
+                <div className="space-y-3">
+                  {fields.map((f) => {
+                    const id = `gr-field-${f.key}`;
+                    const value = fieldValues[f.key] ?? '';
+                    const set = (v: string) => setFieldValues((prev) => ({ ...prev, [f.key]: v }));
+                    const invalid = f.required && !value.trim();
+                    const cls = `${select} ${invalid ? 'border-amber-400 dark:border-amber-500' : ''}`;
+                    return (
+                      <div key={f.key}>
+                        <label htmlFor={id} className="block text-xs text-gray-700 dark:text-gray-300 mb-1">
+                          {f.label} {f.required && <span className="text-red-500">*</span>}
+                        </label>
+                        {f.type === 'multiline' ? (
+                          <textarea id={id} rows={3} value={value} onChange={(e) => set(e.target.value)} className={cls} />
+                        ) : (
+                          <input
+                            id={id}
+                            type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
+                            value={value}
+                            onChange={(e) => set(e.target.value)}
+                            className={cls}
+                          />
+                        )}
+                        {f.help && <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{f.help}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
             <input type="checkbox" className="mt-0.5" checked={showToolNames} onChange={(e) => setShowToolNames(e.target.checked)} />
@@ -208,12 +264,16 @@ export const GenerateReportModal: React.FC<{
             </button>
             <button
               onClick={() => generateMutation.mutate()}
-              disabled={!selected || generateMutation.isPending}
+              disabled={!selected || missing.length > 0 || generateMutation.isPending}
+              title={!selected ? 'Choose a template first' : missing.length > 0 ? `Fill in: ${missing.map((f) => f.label).join(', ')}` : undefined}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
             >
               <FileText className="w-4 h-4" /> {generateMutation.isPending ? 'Generating…' : 'Generate'}
             </button>
           </div>
+          {selected && missing.length > 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">Fill in the required fields: {missing.map((f) => f.label).join(', ')}.</p>
+          )}
           {generateMutation.isPending && <p className="text-xs text-gray-500 dark:text-gray-400">Building the PDF and Word files. This takes a few seconds.</p>}
         </div>
 
@@ -235,7 +295,7 @@ export const GenerateReportModal: React.FC<{
               // sandbox="": no scripts, no same-origin access. The report HTML is display-only here.
               <iframe title="Report preview" sandbox="" srcDoc={previewHtml} className="absolute inset-0 w-full h-full bg-white" />
             ) : (
-              <p className="p-4 text-sm text-gray-500">{previewLoading ? 'Rendering preview…' : 'Choose a template to see a preview.'}</p>
+              <p className="p-4 text-sm text-gray-500">{previewLoading ? 'Rendering preview…' : 'Choose a testing type and a template to see a preview.'}</p>
             )}
           </div>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">

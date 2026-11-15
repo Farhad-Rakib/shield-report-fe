@@ -5,7 +5,7 @@ import { Api, Paged, ReportTemplate, Report, Vulnerability, prefix, runId } from
 
 // Client org -> asset -> scan authorization (Custom Check) -> engagement -> scans with harmless
 // custom alpine tools (never contact the target) -> finding -> report with an E2E template that
-// has a required dynamic field -> edit sections -> preview -> approve -> download.
+// has a required dynamic field filled in the Generate dialog -> edit sections -> preview -> approve -> download.
 test.describe.configure({ mode: 'serial' });
 
 const P = () => prefix();
@@ -246,21 +246,36 @@ test.describe('operational flow', () => {
     await expect(generate).toBeEnabled();
     await generate.click();
     const modal = dialog(page, 'Generate Report');
-    const tpl = modal.locator('label').filter({ hasText: names.template() });
-    await expect(tpl).toContainText('Custom HTML');
-    await tpl.getByRole('radio').check();
-    await modal.locator('select').selectOption('Gray');
+    // No default template: nothing is selected and Generate is disabled until one is chosen.
+    const generateBtn = modal.getByRole('button', { name: 'Generate', exact: true });
+    const templateSelect = modal.getByLabel('2. Report template');
+    await expect(templateSelect).toHaveValue('');
+    await expect(generateBtn).toBeDisabled();
+
+    // 1. testing type narrows the template list; changing it away from the engagement's warns.
+    await modal.getByLabel('1. Testing type').selectOption('Gray');
     await expect(modal.getByText("Generating also changes the engagement's testing type.")).toBeVisible();
-    await modal.locator('select').selectOption('White');
+    await expect(templateSelect.locator('option', { hasText: 'Gray Box Testing' })).toHaveCount(1);
+    await expect(templateSelect.locator('option', { hasText: 'White Box Testing' })).toHaveCount(0);
+    await modal.getByLabel('1. Testing type').selectOption('White');
+
+    // 2. the custom template (offered for every testing type), 3. its required dynamic field.
+    await templateSelect.selectOption({ label: names.template() });
+    await expect(modal.getByText('Edited HTML')).toBeVisible();
+    const signoff = modal.getByLabel(/Sign-off/);
+    await expect(signoff).toHaveValue('');
+    await expect(generateBtn).toBeDisabled();
+    await signoff.fill('E2E Initial Signer');
+    await expect(generateBtn).toBeEnabled();
     // Keep the run deterministic and offline: no AI drafting.
     await modal.getByRole('checkbox', { name: /Draft summaries with AI/ }).uncheck();
 
     const preview = modal.frameLocator('iframe[title="Report preview"]');
-    await expect(preview.locator('.e2e-signoff')).toBeVisible({ timeout: 30_000 });
+    await expect(preview.locator('.e2e-signoff')).toHaveText('Signed off by: E2E Initial Signer', { timeout: 30_000 });
     await expect(preview.locator('body')).toContainText(`found ${names.host()}`);
 
     const started = Date.now();
-    await modal.getByRole('button', { name: 'Generate', exact: true }).click();
+    await generateBtn.click();
     await expect(modal).toBeHidden({ timeout: 60_000 });
     const took = Date.now() - started;
     test.info().annotations.push({ type: 'generate-report-ms', description: String(took) });
@@ -280,8 +295,10 @@ test.describe('operational flow', () => {
     await report.getByRole('button', { name: 'Edit Sections' }).click();
     const modal = dialog(page, 'Edit Report Sections');
     await expect(modal.getByText('Template fields')).toBeVisible();
+    // The value entered in the Generate dialog carries over; clearing it is blocked.
     const signoff = modal.getByLabel(/Sign-off/);
-    await expect(signoff).toHaveValue('');
+    await expect(signoff).toHaveValue('E2E Initial Signer');
+    await signoff.fill('');
 
     const summary = `E2E executive summary ${runId()}`;
     await modal.locator('textarea').first().fill(summary);

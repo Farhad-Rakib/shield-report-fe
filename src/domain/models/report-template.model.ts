@@ -4,7 +4,9 @@ export interface ReportTemplate {
   id: number;
   name: string;
   companyDisplayName: string;
-  isDefault: boolean;
+  // Engagement report (White/Gray/Black Box) or Findings summary (Findings Report export).
+  // There is no default template: users always pick one.
+  kind: ReportTemplateKind;
   hasCustomDocxTemplate: boolean;
   docxTemplateFileName: string | null;
   hasCustomHtmlTemplate: boolean;
@@ -13,6 +15,13 @@ export interface ReportTemplate {
   // sample). null = created by an admin (falls back to the engagement's testing type).
   builtInTestingType?: TestingType | null;
 }
+
+export type ReportTemplateKind = 'Engagement' | 'FindingsSummary';
+
+export const REPORT_TEMPLATE_KIND_LABELS: Record<ReportTemplateKind, string> = {
+  Engagement: 'Engagement report',
+  FindingsSummary: 'Findings summary',
+};
 
 export const BUILT_IN_TEMPLATE_LABELS: Record<TestingType, string> = {
   White: 'White Box built-in',

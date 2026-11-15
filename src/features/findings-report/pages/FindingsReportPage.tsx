@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ChevronsDownUp, ChevronsUpDown, Download, FileSearch, Printer } from 'lucide-react';
+import { AlertTriangle, ChevronsDownUp, ChevronsUpDown, FileDown, FileSearch } from 'lucide-react';
 import { FilterCard, useListFilters } from '../../../components/ui/FilterCard/FilterCard';
 import { EmptyState } from '../../../components/ui/EmptyState/EmptyState';
 import { ErrorState } from '../../../components/ui/ErrorState/ErrorState';
@@ -9,9 +9,10 @@ import { SEVERITY_DOT_CLASS, SeverityLevel } from '../../../components/ui/Severi
 import { findingsReportApi } from '../../../core/api/services/findings-report.api';
 import type { PatchStatus, Severity } from '../../../domain/models/vulnerability.model';
 import type { FindingsReport, SeverityCounts } from '../../../domain/models/findings-report.model';
+import { ExportFindingsPdfModal } from '../components/ExportFindingsPdfModal';
 import { FindingsReportDetails } from '../components/FindingsReportDetails';
 import { SeverityCountChips } from '../components/SeverityCountChips';
-import { ASSET_TYPE_LABEL, PATCH_STATUS_LABEL, assetDomId, assetKey, buildFindingsCsv, downloadCsv } from '../utils/findings-report.utils';
+import { ASSET_TYPE_LABEL, PATCH_STATUS_LABEL, assetDomId, assetKey } from '../utils/findings-report.utils';
 
 const SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low', 'Informational'];
 const PATCH_STATUSES: PatchStatus[] = ['Open', 'InProgress', 'Patched', 'AcceptedRisk', 'WontFix'];
@@ -26,16 +27,6 @@ const SEVERITY_TILES: { level: SeverityLevel; key: keyof SeverityCounts; label: 
   { level: 'low', key: 'low', label: 'Low' },
   { level: 'info', key: 'informational', label: 'Info' },
 ];
-
-// Print only the report: hide the app shell and let the scroll containers grow.
-const PRINT_CSS = `
-@media print {
-  body * { visibility: hidden; }
-  [data-print-root], [data-print-root] * { visibility: visible; }
-  [data-print-root] { position: absolute; left: 0; top: 0; width: 100%; }
-  .h-screen, .overflow-hidden, .overflow-y-auto, main { height: auto !important; overflow: visible !important; }
-}
-`;
 
 function allKeys(report: FindingsReport | undefined) {
   const clients = new Set<number>();
@@ -53,15 +44,16 @@ export function FindingsReportPage() {
   const [patchStatus, setPatchStatus] = useState<PatchStatus | ''>('');
   const [collapsedClients, setCollapsedClients] = useState<Set<number>>(new Set());
   const [collapsedAssets, setCollapsedAssets] = useState<Set<string>>(new Set());
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const reportParams = useMemo(
+    () => ({ ...filters.params, severity: severity || undefined, patchStatus: patchStatus || undefined }),
+    [filters.params, severity, patchStatus],
+  );
 
   const { data, isLoading, isFetching, error, refetch } = useQuery({
-    queryKey: ['findings-report', filters.params, severity, patchStatus],
-    queryFn: () =>
-      findingsReportApi.getReport({
-        ...filters.params,
-        severity: severity || undefined,
-        patchStatus: patchStatus || undefined,
-      }),
+    queryKey: ['findings-report', reportParams],
+    queryFn: () => findingsReportApi.getReport(reportParams),
   });
 
   // Fresh data: expand everything unless it's large, then start with assets collapsed.
@@ -124,23 +116,30 @@ export function FindingsReportPage() {
     setPatchStatus('');
   };
 
-  const handleExport = () => {
-    if (!data) return;
-    const stamp = new Date().toISOString().slice(0, 10);
-    downloadCsv(`findings-report-${stamp}.csv`, buildFindingsCsv(data));
-  };
-
-  const handlePrint = () => {
-    expandAll();
-    window.setTimeout(() => window.print(), 100);
-  };
+  // One-line summary of the filters being exported (names from the loaded report when present).
+  const filterDescription = useMemo(() => {
+    const { clientOrganizationId, clientAssetId, from, to } = reportParams;
+    const client = clientOrganizationId
+      ? data?.clients.find((c) => c.id === clientOrganizationId)?.name ?? `Client #${clientOrganizationId}`
+      : 'All clients';
+    const asset = clientAssetId
+      ? data?.clients.flatMap((c) => c.assets).find((a) => a.id === clientAssetId)?.name ?? `Asset #${clientAssetId}`
+      : 'All assets';
+    const period = from && to ? `${from} to ${to}` : from ? `from ${from}` : to ? `until ${to}` : 'any date';
+    return [
+      client,
+      asset,
+      `tested ${period}`,
+      severity || 'all severities',
+      patchStatus ? PATCH_STATUS_LABEL[patchStatus] : 'all statuses',
+    ].join(' · ');
+  }, [reportParams, data, severity, patchStatus]);
 
   const hasData = Boolean(data && data.clients.length > 0);
   const summary = data?.summary;
 
   return (
-    <div className="space-y-5" data-print-root>
-      <style>{PRINT_CSS}</style>
+    <div className="space-y-5">
 
       <div className="page-header mb-0">
         <div>
@@ -150,19 +149,22 @@ export function FindingsReportPage() {
             Clients and assets tested in the selected period, with their vulnerabilities grouped by client and asset.
           </p>
         </div>
-        <div className="flex items-center gap-2 print:hidden">
-          <button type="button" className="btn-secondary" onClick={handleExport} disabled={!hasData}>
-            <Download className="h-3.5 w-3.5" />
-            Export CSV
-          </button>
-          <button type="button" className="btn-secondary" onClick={handlePrint} disabled={!hasData}>
-            <Printer className="h-3.5 w-3.5" />
-            Print
+        <div className="flex items-center gap-2">
+          <button type="button" className="btn-secondary" onClick={() => setExportOpen(true)} disabled={isLoading || isFetching || !!error}>
+            <FileDown className="h-3.5 w-3.5" />
+            Export PDF
           </button>
         </div>
       </div>
 
-      <div className="print:hidden">
+      <ExportFindingsPdfModal
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        filters={reportParams}
+        filterDescription={filterDescription}
+      />
+
+      <div>
         <FilterCard
           values={filters.values}
           onChange={filters.setValues}
@@ -245,7 +247,7 @@ export function FindingsReportPage() {
           </div>
 
           {/* Clients + assets tested */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 print:hidden">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div className="panel flex flex-col">
               <div className="panel-header">
                 <div>
@@ -326,7 +328,7 @@ export function FindingsReportPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Findings by client and asset</h2>
-              <div className="flex items-center gap-1 print:hidden">
+              <div className="flex items-center gap-1">
                 <button type="button" className="btn-ghost btn-sm" onClick={expandAll}>
                   <ChevronsUpDown className="h-3.5 w-3.5" />
                   Expand all

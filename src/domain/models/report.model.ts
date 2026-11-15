@@ -1,3 +1,4 @@
+import type { ReportTemplateField } from './report-template.model';
 export type ReportStatus = 'PendingApproval' | 'Approved' | 'Rejected';
 
 // Mirrors ShieldReport.Application.Reports.Dtos.ReportDto field-for-field.
@@ -38,11 +39,12 @@ export interface Report {
 export interface ReportTemplateOption {
   id: number;
   name: string;
-  isDefault: boolean;
   engine: 'Html' | 'Word';
   isCustomHtml: boolean;
   // Built-in White/Gray/Black Box template row; null = admin-created.
   builtInTestingType?: 'White' | 'Gray' | 'Black' | null;
+  // Dynamic fields ({{Custom.<key>}}), filled in the Generate dialog.
+  customFields: ReportTemplateField[];
 }
 
 export interface GenerateReportOptions {
@@ -50,6 +52,8 @@ export interface GenerateReportOptions {
   testingType: 'White' | 'Gray' | 'Black' | null;
   draftWithAi: boolean;
   showToolNames: boolean;
+  // Values for the chosen template's dynamic fields, keyed by field key.
+  customFieldValues?: Record<string, string>;
 }
 
 export interface ReportRecipientOption {

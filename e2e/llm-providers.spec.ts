@@ -36,13 +36,13 @@ test.describe('AI providers & models', () => {
     const modal = dialog(page, 'Add LLM Provider');
 
     // Anthropic (default): no temperature field.
-    await expect(modal.getByLabel('Provider')).toHaveValue('Anthropic');
+    await expect(modal.getByLabel('Provider', { exact: true })).toHaveValue('Anthropic');
     await expect(modal.getByLabel('Temperature')).toHaveCount(0);
-    await modal.getByLabel('Provider').selectOption('OpenAi');
+    await modal.getByLabel('Provider', { exact: true }).selectOption('OpenAi');
     await expect(modal.getByLabel('Temperature')).toBeVisible();
 
     // OpenAI-compatible needs a base URL before it can be saved.
-    await modal.getByLabel('Provider').selectOption('OpenAiCompatible');
+    await modal.getByLabel('Provider', { exact: true }).selectOption('OpenAiCompatible');
     await modal.getByLabel(/^API key/).fill('sk-e2e-not-a-real-key');
     await modal.getByLabel(/^Model/).fill('e2e-model');
     const save = modal.getByRole('button', { name: 'Add provider' });
@@ -57,7 +57,7 @@ test.describe('AI providers & models', () => {
     await page.goto('/llm-providers');
     await page.getByRole('button', { name: 'Add Provider' }).first().click();
     const modal = dialog(page, 'Add LLM Provider');
-    await modal.getByLabel('Provider').selectOption('OpenAiCompatible');
+    await modal.getByLabel('Provider', { exact: true }).selectOption('OpenAiCompatible');
     await modal.getByLabel(/^Name/).fill(name());
     await modal.getByLabel(/^API key/).fill('sk-e2e-not-a-real-key');
     await modal.getByLabel(/^Model/).fill('e2e-model');
@@ -88,7 +88,7 @@ test.describe('AI providers & models', () => {
     const c = card(page, name());
     await c.getByRole('button', { name: 'Edit' }).click();
     const modal = dialog(page, `Edit ${name()}`);
-    await expect(modal.getByLabel('Provider')).toBeDisabled();
+    await expect(modal.getByLabel('Provider', { exact: true })).toBeDisabled();
     await expect(modal.getByLabel(/^Base URL/)).toHaveValue('http://127.0.0.1:9/v1');
     // Key left blank keeps the stored one.
     await expect(modal.getByLabel(/^API key/)).toHaveValue('');

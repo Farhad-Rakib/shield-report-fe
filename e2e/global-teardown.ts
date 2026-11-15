@@ -76,7 +76,7 @@ export default async function globalTeardown() {
   }
 
   const templates = await api.get<ReportTemplate[]>('/ReportTemplates');
-  for (const t of templates.filter((x) => isE2E(x.name) && !x.isDefault)) {
+  for (const t of templates.filter((x) => isE2E(x.name))) {
     await attempt(`delete template ${t.name}`, () => api.delete(`/ReportTemplates/${t.id}`));
   }
 

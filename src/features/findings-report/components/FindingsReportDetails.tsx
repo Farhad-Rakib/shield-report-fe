@@ -21,7 +21,7 @@ export function FindingsReportDetails({ clients, collapsedClients, collapsedAsse
       {clients.map((client) => {
         const clientOpen = !collapsedClients.has(client.id);
         return (
-          <section key={client.id} className="panel overflow-hidden print:break-inside-avoid-page">
+          <section key={client.id} className="panel overflow-hidden">
             <button
               type="button"
               onClick={() => onToggleClient(client.id)}
@@ -29,9 +29,9 @@ export function FindingsReportDetails({ clients, collapsedClients, collapsedAsse
               aria-expanded={clientOpen}
             >
               {clientOpen ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500 print:hidden" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
               ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500 print:hidden" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" />
               )}
               <Building2 className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
               <div className="min-w-0 flex-1">
@@ -79,9 +79,9 @@ function AssetSection({ clientId, asset, open, onToggle }: { clientId: number; a
         aria-expanded={open}
       >
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500 print:hidden" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500 print:hidden" />
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
         )}
         <Server className={`h-3.5 w-3.5 shrink-0 ${unassigned ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}`} />
         <div className="min-w-0 flex-1">
