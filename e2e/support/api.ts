@@ -35,7 +35,13 @@ export class Api {
   }
 
   private async call<T>(method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: string, data?: unknown): Promise<T> {
-    const res = await this.ctx[method](`${API_URL}${path}`, data === undefined ? {} : { data });
+    // The whole suite runs as one user, so the per-user rate limit (600/min) can trip during
+    // teardown. Wait out 429s (the window is one minute) instead of failing.
+    let res = await this.ctx[method](`${API_URL}${path}`, data === undefined ? {} : { data });
+    for (let attempt = 0; res.status() === 429 && attempt < 8; attempt++) {
+      await new Promise((r) => setTimeout(r, 10_000));
+      res = await this.ctx[method](`${API_URL}${path}`, data === undefined ? {} : { data });
+    }
     const text = await res.text();
     if (!res.ok()) throw new Error(`${method.toUpperCase()} ${path} -> ${res.status()}: ${text.slice(0, 500)}`);
     const body = text ? (JSON.parse(text) as ApiEnvelope<T>) : ({ data: undefined } as ApiEnvelope<T>);
