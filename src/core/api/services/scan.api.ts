@@ -3,13 +3,14 @@ import { PaginatedResponse } from '../http.types';
 import { ApiResponse } from '../../../domain/dto/auth.dto';
 import { Scan, ScanFindingRaw } from '../../../domain/models/scan.model';
 import { CreateScanRequestDto } from '../../../domain/dto/scan.dto';
+import { ListFilterQuery } from '../../../domain/dto/list-filter.dto';
 
 class ScanApi extends BaseRepository {
   constructor() {
     super('');
   }
 
-  async getScans(params?: { clientOrganizationId?: number; clientAssetId?: number; engagementId?: number; status?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Scan>> {
+  async getScans(params?: ListFilterQuery & { engagementId?: number; status?: string; page?: number; pageSize?: number }): Promise<PaginatedResponse<Scan>> {
     const res = await this.get<ApiResponse<PaginatedResponse<Scan>>>('/scans', { params });
     if (!res.success) throw new Error(res.message);
     return res.data;

@@ -8,7 +8,7 @@ import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
 import { reportTemplateApi } from '../../../core/api/services/report-template.api';
-import { ReportTemplate } from '../../../domain/models/report-template.model';
+import { BUILT_IN_TEMPLATE_LABELS, ReportTemplate } from '../../../domain/models/report-template.model';
 
 const TOKEN_GROUPS: { label: string; tokens: string[] }[] = [
   { label: 'Simple (anywhere, incl. table cells)', tokens: ['{{ClientName}}', '{{CompanyDisplayName}}', '{{ReportVersion}}', '{{EngagementDateRange}}', '{{TotalFindingsCount}}', '{{SeverityBreakdown}}', '{{GeneratedDate}}'] },
@@ -108,7 +108,23 @@ export const ReportTemplatesPage: React.FC = () => {
   const [studioTab, setStudioTab] = useState<'html' | 'fields' | 'preview'>('html');
 
   const columns: Column<ReportTemplate>[] = [
-    { key: 'name', label: 'Name', sortable: true },
+    {
+      key: 'name',
+      label: 'Name',
+      sortable: true,
+      render: (_, item) => (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span className="text-gray-900 dark:text-gray-100">{item.name}</span>
+          {item.builtInTestingType ? (
+            <span className="badge-info" title="Falls back to the built-in SELISE template for this testing type while it has no custom HTML">
+              {BUILT_IN_TEMPLATE_LABELS[item.builtInTestingType]}
+            </span>
+          ) : (
+            <span className="badge-neutral" title="Created by an admin: without custom HTML it uses the built-in template of the engagement's testing type">Custom</span>
+          )}
+        </span>
+      ),
+    },
     { key: 'companyDisplayName', label: 'Company Display Name' },
     { key: 'isDefault', label: 'Default', render: (value: boolean) => (value ? <span className="badge-brand">Default</span> : <span className="text-xs text-gray-400">—</span>) },
     {
@@ -130,7 +146,14 @@ export const ReportTemplatesPage: React.FC = () => {
             <FileText className="w-3.5 h-3.5" /> {item.docxTemplateFileName}
           </span>
         ) : (
-          <span className="text-xs text-gray-500 dark:text-gray-400">HTML engine{item.hasCustomHtmlTemplate ? ' — custom template' : ' — built-in template'}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            HTML engine
+            {item.hasCustomHtmlTemplate
+              ? ' — custom HTML'
+              : item.builtInTestingType
+                ? ` — built-in ${item.builtInTestingType} Box template`
+                : " — built-in template matching the engagement's testing type"}
+          </span>
         ),
     },
   ];

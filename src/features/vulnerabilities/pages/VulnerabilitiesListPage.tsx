@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Eye, FileCheck } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { SeverityBadge, PatchStatusBadge } from '../../../components/badges/PentestBadges';
+import { FilterCard, useListFilters } from '../../../components/ui/FilterCard/FilterCard';
 import { vulnerabilityApi } from '../../../core/api/services/vulnerability.api';
-import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
 import { Vulnerability, Severity, PatchStatus } from '../../../domain/models/vulnerability.model';
 import { SCAN_TOOL_LABELS } from '../../../domain/models/scan.model';
 
@@ -27,41 +27,28 @@ function formatToolsUsed(toolsUsed: string): string {
 
 export const VulnerabilitiesListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
+  const filters = useListFilters();
   const [severity, setSeverity] = useState<Severity | ''>('');
   const [patchStatus, setPatchStatus] = useState<PatchStatus | ''>('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const { data: orgData } = useQuery({
-    queryKey: ['client-organizations-picker'],
-    queryFn: () => clientOrganizationApi.getOrganizations({ pageSize: 100 }),
-  });
-  const organizations = orgData?.data ?? [];
-
-  useEffect(() => {
-    if (clientOrganizationId === null && organizations.length > 0) {
-      setClientOrganizationId(organizations[0].id);
-    }
-  }, [organizations, clientOrganizationId]);
-
   // Any filter change invalidates the current page — a page number valid for one filter
   // combination can easily be out of range (or just show the wrong slice) for another.
   useEffect(() => {
     setPage(1);
-  }, [clientOrganizationId, severity, patchStatus]);
+  }, [filters.params, severity, patchStatus]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['vulnerabilities', clientOrganizationId, severity, patchStatus, page, pageSize],
+    queryKey: ['vulnerabilities', filters.params, severity, patchStatus, page, pageSize],
     queryFn: () =>
       vulnerabilityApi.getVulnerabilities({
-        clientOrganizationId: clientOrganizationId!,
+        ...filters.params,
         severity: severity || undefined,
         patchStatus: patchStatus || undefined,
         page,
         pageSize,
       }),
-    enabled: clientOrganizationId !== null,
   });
   const vulnerabilities = data?.data ?? [];
 
@@ -99,54 +86,37 @@ export const VulnerabilitiesListPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Vulnerabilities</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Findings auto-created from scans and manually reported by pentesters</p>
-        </div>
-        <div className="flex items-end gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Client Organization</label>
-            {organizations.length === 0 ? (
-              <Link to="/clients" className="text-sm text-blue-600 hover:underline">
-                Register a client organization first
-              </Link>
-            ) : (
-              <select
-                value={clientOrganizationId ?? ''}
-                onChange={(e) => setClientOrganizationId(Number(e.target.value))}
-                className="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {organizations.map((org) => (
-                  <option key={org.id} value={org.id}>{org.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Severity</label>
-            <select
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value as Severity | '')}
-              className="w-36 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All</option>
-              {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Patch Status</label>
-            <select
-              value={patchStatus}
-              onChange={(e) => setPatchStatus(e.target.value as PatchStatus | '')}
-              className="w-36 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All</option>
-              {PATCH_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Vulnerabilities</h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">Findings auto-created from scans and manually reported by pentesters</p>
       </div>
+
+      <FilterCard
+        values={filters.values}
+        onChange={filters.setValues}
+        onReset={() => {
+          filters.reset();
+          setSeverity('');
+          setPatchStatus('');
+        }}
+        extraActive={Boolean(severity || patchStatus)}
+        dateLabel="First seen"
+      >
+        <div>
+          <label className="label">Severity</label>
+          <select value={severity} onChange={(e) => setSeverity(e.target.value as Severity | '')} className="input w-36">
+            <option value="">All</option>
+            {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Patch status</label>
+          <select value={patchStatus} onChange={(e) => setPatchStatus(e.target.value as PatchStatus | '')} className="input w-36">
+            <option value="">All</option>
+            {PATCH_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </FilterCard>
 
       <DataTable
         columns={columns}
@@ -154,8 +124,14 @@ export const VulnerabilitiesListPage: React.FC = () => {
         isLoading={isLoading}
         error={error?.message}
         searchable={false}
-        emptyState={{ title: 'No vulnerabilities found', description: 'Run a scan or add a manual finding to get started' }}
-        actions={{ add: { label: 'Add Finding', onClick: () => navigate(`/vulnerabilities/new?clientOrganizationId=${clientOrganizationId}`) } }}
+        emptyState={{ title: 'No vulnerabilities found', description: filters.isActive || severity || patchStatus ? 'No vulnerabilities match these filters' : 'Run a scan or add a manual finding to get started' }}
+        actions={{
+          add: {
+            label: 'Add Finding',
+            onClick: () =>
+              navigate(filters.values.clientOrganizationId ? `/vulnerabilities/new?clientOrganizationId=${filters.values.clientOrganizationId}` : '/vulnerabilities/new'),
+          },
+        }}
         rowActions={rowActions}
         onRetry={() => refetch()}
         pagination={{

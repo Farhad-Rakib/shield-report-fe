@@ -54,7 +54,7 @@ function hasRole(roleClaim: unknown, role: string): boolean {
   return roleClaim === role;
 }
 
-function isSuperAdmin(tokenPayload: TokenPayload | null): boolean {
+export function isSuperAdmin(tokenPayload: TokenPayload | null): boolean {
   if (!tokenPayload) return false;
   return (
     hasRole(tokenPayload.role, 'SuperAdmin') ||

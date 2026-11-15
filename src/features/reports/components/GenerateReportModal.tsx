@@ -7,7 +7,7 @@ import { reportApi } from '../../../core/api/services/report.api';
 import { llmConfigurationApi } from '../../../core/api/services/llm-configuration.api';
 import { useAuthStore } from '../../auth/store/auth.store';
 import { Permissions } from '../../../core/constants/permissions';
-import { Report } from '../../../domain/models/report.model';
+import { Report, ReportTemplateOption } from '../../../domain/models/report.model';
 import { TestingType, TESTING_TYPE_LABELS } from '../../../domain/models/engagement.model';
 
 type ApiError = { response?: { data?: { message?: string } }; message?: string };
@@ -17,6 +17,11 @@ const errorMessage = (err: unknown, fallback: string) => {
 };
 
 const TESTING_TYPES: TestingType[] = ['White', 'Gray', 'Black'];
+
+// Same rule as the backend when no template is given: the built-in template of the testing type,
+// then the default one, then the first.
+const pickTemplate = (templates: ReportTemplateOption[], testingType: TestingType) =>
+  templates.find((t) => t.builtInTestingType === testingType) ?? templates.find((t) => t.isDefault) ?? templates[0];
 
 // Generate Report dialog: pick template, testing type and options, see a live preview of the
 // result (nothing is saved until Generate), then generate. AI drafting of the summary sections
@@ -30,6 +35,8 @@ export const GenerateReportModal: React.FC<{
 }> = ({ isOpen, engagementId, engagementTestingType, onClose, onGenerated }) => {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const [templateId, setTemplateId] = useState<number | null>(null);
+  // Once the user picks a template themselves, changing the testing type no longer switches it.
+  const [templatePicked, setTemplatePicked] = useState(false);
   const [testingType, setTestingType] = useState<TestingType>(engagementTestingType);
   const [showToolNames, setShowToolNames] = useState(false);
   const [draftWithAi, setDraftWithAi] = useState(true);
@@ -55,6 +62,8 @@ export const GenerateReportModal: React.FC<{
 
   useEffect(() => {
     if (!isOpen) return;
+    setTemplateId(null);
+    setTemplatePicked(false);
     setTestingType(engagementTestingType);
     setShowToolNames(false);
     setDraftWithAi(true);
@@ -63,10 +72,10 @@ export const GenerateReportModal: React.FC<{
   }, [isOpen, engagementTestingType]);
 
   useEffect(() => {
-    if (isOpen && templateId === null && templates.length > 0) {
-      setTemplateId((templates.find((t) => t.isDefault) ?? templates[0]).id);
+    if (isOpen && !templatePicked && templates.length > 0) {
+      setTemplateId(pickTemplate(templates, testingType).id);
     }
-  }, [isOpen, templates, templateId]);
+  }, [isOpen, templates, templatePicked, testingType]);
 
   const selected = templates.find((t) => t.id === templateId) ?? null;
 
@@ -136,12 +145,13 @@ export const GenerateReportModal: React.FC<{
                         : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
                     }`}
                   >
-                    <input type="radio" className="mt-0.5" checked={t.id === templateId} onChange={() => setTemplateId(t.id)} />
+                    <input type="radio" className="mt-0.5" checked={t.id === templateId} onChange={() => { setTemplateId(t.id); setTemplatePicked(true); }} />
                     <span className="min-w-0">
                       <span className="block font-medium text-gray-900 dark:text-white truncate">{t.name}</span>
                       <span className="block text-xs text-gray-500 dark:text-gray-400">
+                        {t.builtInTestingType && `${t.builtInTestingType} Box built-in · `}
                         {t.isDefault && 'Default · '}
-                        {t.engine === 'Word' ? 'Word template (no preview)' : t.isCustomHtml ? 'Custom HTML · PDF + Word' : 'Built-in · PDF + Word'}
+                        {t.engine === 'Word' ? 'Word template (no preview)' : t.isCustomHtml ? 'Custom HTML · PDF + Word' : t.builtInTestingType ? 'PDF + Word' : 'Built-in · PDF + Word'}
                       </span>
                     </span>
                   </label>

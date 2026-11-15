@@ -6,6 +6,8 @@ import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { toast } from '../../../components/ui/Toast/toast.store';
 import { llmConfigurationApi } from '../../../core/api/services/llm-configuration.api';
+import { llmProviderCatalogApi } from '../../../core/api/services/llm-provider-catalog.api';
+import { LlmProviderCatalogItem } from '../../../domain/models/llm-provider-catalog.model';
 import { LlmProvider, LlmProviderConfiguration, LlmProviderTestResult } from '../../../domain/models/llm-provider-config.model';
 
 type ApiError = { response?: { data?: { message?: string } }; message?: string };
@@ -74,6 +76,16 @@ const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
 
 const PROVIDER_ORDER: LlmProvider[] = ['Anthropic', 'OpenAi', 'Gemini', 'OpenRouter', 'OpenAiCompatible'];
 
+/** Which engine a Provider List entry runs on, guessed from its name; anything unknown is OpenAI-compatible. */
+const engineFor = (item: LlmProviderCatalogItem): LlmProvider => {
+  const n = item.name.toLowerCase();
+  if (n.includes('anthropic') || n.includes('claude')) return 'Anthropic';
+  if (n.includes('openrouter')) return 'OpenRouter';
+  if (n.includes('gemini') || n.includes('google')) return 'Gemini';
+  if (n.includes('openai') && !n.includes('compatible')) return 'OpenAi';
+  return 'OpenAiCompatible';
+};
+
 interface FormState {
   name: string;
   provider: LlmProvider;
@@ -127,6 +139,18 @@ const ProviderFormModal: React.FC<{
   const info = PROVIDERS[form.provider];
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 
+  // AI -> Provider List entries, offered as a starting point when adding a configuration.
+  const { data: catalog = [] } = useQuery({
+    queryKey: ['llm-provider-catalog'],
+    queryFn: () => llmProviderCatalogApi.getAll(),
+    enabled: isOpen && !editing,
+  });
+  const applyCatalogItem = (id: string) => {
+    const item = catalog.find((c) => String(c.id) === id);
+    if (!item) return;
+    setForm((f) => ({ ...f, provider: engineFor(item), model: item.model ?? f.model, name: f.name || item.name }));
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const common = {
@@ -162,6 +186,23 @@ const ProviderFormModal: React.FC<{
           if (canSave) saveMutation.mutate();
         }}
       >
+        {!editing && catalog.length > 0 && (
+          <label className="block text-sm text-gray-700 dark:text-gray-300">
+            Start from provider list <span className="text-gray-400">(optional)</span>
+            <select defaultValue="" onChange={(e) => applyCatalogItem(e.target.value)} className={inputClass}>
+              <option value="">Choose a provider to prefill the form…</option>
+              {catalog.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.model ? ` · ${c.model}` : ''}
+                </option>
+              ))}
+            </select>
+            <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Managed in <Link to="/llm-provider-catalog" className="text-brand-600 dark:text-brand-400 hover:underline">AI → Provider List</Link>.
+            </span>
+          </label>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label className="block text-sm text-gray-700 dark:text-gray-300">
             Provider

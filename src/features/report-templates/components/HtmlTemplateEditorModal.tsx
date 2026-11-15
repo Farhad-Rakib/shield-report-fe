@@ -6,6 +6,11 @@ import { toast } from '../../../components/ui/Toast/toast.store';
 import { reportTemplateApi } from '../../../core/api/services/report-template.api';
 import { ReportTemplate, ReportTemplateField, ReportTemplateFieldType } from '../../../domain/models/report-template.model';
 
+// Which built-in a template falls back to: its own testing type, or White in the studio for a
+// user-created template (at generation time it follows the engagement's testing type).
+const builtInName = (template: ReportTemplate | null) =>
+  template?.builtInTestingType ? `${template.builtInTestingType} Box` : 'White Box';
+
 type ApiError = { response?: { data?: { message?: string } }; message?: string };
 const errorMessage = (err: unknown, fallback: string) => {
   const e = err as ApiError | undefined;
@@ -74,7 +79,7 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
     mutationFn: () => reportTemplateApi.resetHtml(template!.id),
     onSuccess: (result) => {
       setContent(result.htmlContent);
-      done('Template reset to the built-in default');
+      done(`Template reset to the built-in ${builtInName(template)} template`);
     },
     onError: (err: unknown) => toast.error(errorMessage(err, 'Failed to reset template')),
   });
@@ -148,7 +153,12 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
             {tabBtn('preview', 'Preview', Eye)}
           </div>
           <span className="text-xs text-gray-500 dark:text-gray-400 pb-2">
-            {data?.isCustom ? 'Custom HTML' : 'Built-in White / Gray / Black Box template'} · one template makes both PDF and Word
+            {data?.isCustom
+              ? 'Custom HTML'
+              : template?.builtInTestingType
+                ? `Built-in ${builtInName(template)} template`
+                : "Built-in template (White Box shown; follows the engagement's testing type)"}{' '}
+            · one template makes both PDF and Word
           </span>
         </div>
 
@@ -303,7 +313,7 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
             </button>
             {data?.isCustom && (
               <button type="button" className="btn-danger btn-sm" disabled={resetHtml.isPending} onClick={() => resetHtml.mutate()}>
-                Reset to built-in
+                Reset to built-in {builtInName(template)}
               </button>
             )}
           </div>

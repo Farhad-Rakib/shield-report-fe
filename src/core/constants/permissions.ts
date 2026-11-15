@@ -5,6 +5,7 @@
  */
 export const Permissions = {
   UsersRead: 'users.read',
+  UsersUpdate: 'users.update',
   RolesRead: 'roles.read',
   PermissionsRead: 'permissions.read',
   RolePermissionsRead: 'role-permissions.read',
@@ -78,4 +79,11 @@ export const Permissions = {
   ReportTemplatesCreate: 'report-templates.create',
   ReportTemplatesUpdate: 'report-templates.update',
   ReportTemplatesDelete: 'report-templates.delete',
+
+  // Reporting -> Findings Report (clients, assets tested, vulnerabilities grouped client -> asset)
+  FindingsReportRead: 'findings-report.read',
+
+  // Staff without this see only the engagements they lead or are assigned to (and that data).
+  // SuperAdmin always sees everything. Granted per role on Role Permissions.
+  DataViewAll: 'data.view-all',
 } as const;

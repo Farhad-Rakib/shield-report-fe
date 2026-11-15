@@ -22,19 +22,3 @@ export interface RefreshTokenResponseDto {
   accessTokenExpiresAtUtc: string;
 }
 
-export interface RegisterRequestDto {
-  fullName: string;
-  email: string;
-  password: string;
-  roles: string[];
-}
-
-export interface RegisterResponseDto {
-  user: {
-    id: number;
-    fullName: string;
-    email: string;
-    isActive: boolean;
-    roles: string[];
-  };
-}

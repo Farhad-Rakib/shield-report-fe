@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Mail } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
+import { FilterCard, useListFilters } from '../../../components/ui/FilterCard/FilterCard';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
 import { ClientOrganization } from '../../../domain/models/client-organization.model';
 import { CreateClientOrganizationRequestDto, UpdateClientOrganizationRequestDto } from '../../../domain/dto/client-organization.dto';
@@ -15,10 +16,16 @@ export const ClientOrganizationsPage: React.FC = () => {
   const [editOrg, setEditOrg] = useState<ClientOrganization | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const filters = useListFilters();
+
+  // A page number valid for one filter combination can be out of range for another.
+  useEffect(() => {
+    setPage(1);
+  }, [filters.params]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['client-organizations', page, pageSize],
-    queryFn: () => clientOrganizationApi.getOrganizations({ page, pageSize }),
+    queryKey: ['client-organizations', filters.params, page, pageSize],
+    queryFn: () => clientOrganizationApi.getOrganizations({ ...filters.params, page, pageSize }),
   });
   const organizations = data?.data ?? [];
 
@@ -169,13 +176,15 @@ export const ClientOrganizationsPage: React.FC = () => {
         <p className="text-gray-600 dark:text-gray-400 mt-1">Register and manage the client organizations engaged for pentesting</p>
       </div>
 
+      <FilterCard values={filters.values} onChange={filters.setValues} onReset={filters.reset} dateLabel="Registered" />
+
       <DataTable
         columns={columns}
         data={organizations}
         isLoading={isLoading}
         error={error?.message}
         searchable={false}
-        emptyState={{ title: 'No client organizations found', description: 'Register a client organization to get started' }}
+        emptyState={{ title: 'No client organizations found', description: filters.isActive ? 'No client organizations match these filters' : 'Register a client organization to get started' }}
         actions={{ add: { label: 'Add Organization', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}

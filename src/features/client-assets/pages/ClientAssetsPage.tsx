@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldOff } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
+import { FilterCard, useListFilters } from '../../../components/ui/FilterCard/FilterCard';
 import { CriticalityBadge, EnvironmentBadge } from '../../../components/badges/PentestBadges';
 import { clientAssetApi } from '../../../core/api/services/client-asset.api';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
@@ -17,7 +17,7 @@ import { CreateClientAssetRequestDto } from '../../../domain/dto/client-asset.dt
 
 export const ClientAssetsPage: React.FC = () => {
   const queryClient = useQueryClient();
-  const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
+  const filters = useListFilters();
   const [showAddModal, setShowAddModal] = useState(false);
   const [authorizationAsset, setAuthorizationAsset] = useState<ClientAsset | null>(null);
   const hasPermission = useAuthStore((s) => s.hasPermission);
@@ -30,27 +30,22 @@ export const ClientAssetsPage: React.FC = () => {
   });
   const organizations = orgData?.data ?? [];
 
-  useEffect(() => {
-    if (clientOrganizationId === null && organizations.length > 0) {
-      setClientOrganizationId(organizations[0].id);
-    }
-  }, [organizations, clientOrganizationId]);
-
+  // A page number valid for one filter combination can be out of range for another.
   useEffect(() => {
     setPage(1);
-  }, [clientOrganizationId]);
+  }, [filters.params]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['client-assets', clientOrganizationId, page, pageSize],
-    queryFn: () => clientAssetApi.getAssetsForClient(clientOrganizationId!, { page, pageSize }),
-    enabled: clientOrganizationId !== null,
+    queryKey: ['client-assets', filters.params, page, pageSize],
+    queryFn: () => clientAssetApi.getAssets({ ...filters.params, page, pageSize }),
   });
   const assets = data?.data ?? [];
 
   const createMutation = useMutation({
-    mutationFn: (dto: CreateClientAssetRequestDto) => clientAssetApi.createAsset(clientOrganizationId!, dto),
+    mutationFn: (dto: CreateClientAssetRequestDto) => clientAssetApi.createAsset(dto.clientOrganizationId, dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['client-assets', clientOrganizationId] });
+      queryClient.invalidateQueries({ queryKey: ['client-assets'] });
+      queryClient.invalidateQueries({ queryKey: ['client-assets-picker'] });
       toast.success('Asset registered successfully');
       setShowAddModal(false);
     },
@@ -58,6 +53,14 @@ export const ClientAssetsPage: React.FC = () => {
   });
 
   const createFields: FormField[] = [
+    {
+      name: 'clientOrganizationId',
+      label: 'Client Organization',
+      type: 'select',
+      required: true,
+      defaultValue: filters.values.clientOrganizationId,
+      options: organizations.map((org) => ({ label: org.name, value: String(org.id) })),
+    },
     { name: 'name', label: 'Asset Name', type: 'text', required: true, placeholder: 'Public Web App' },
     {
       name: 'assetType',
@@ -90,7 +93,7 @@ export const ClientAssetsPage: React.FC = () => {
 
   const handleCreate = (data: Record<string, any>) => {
     createMutation.mutate({
-      clientOrganizationId: clientOrganizationId!,
+      clientOrganizationId: Number(data.clientOrganizationId),
       name: data.name,
       assetType: data.assetType,
       identifier: data.identifier,
@@ -110,6 +113,7 @@ export const ClientAssetsPage: React.FC = () => {
         </div>
       ),
     },
+    { key: 'clientOrganizationName', label: 'Client' },
     { key: 'assetType', label: 'Type' },
     { key: 'environment', label: 'Environment', render: (_, asset) => <EnvironmentBadge environment={asset.environment} /> },
     { key: 'criticality', label: 'Criticality', render: (_, asset) => <CriticalityBadge criticality={asset.criticality} /> },
@@ -148,25 +152,9 @@ export const ClientAssetsPage: React.FC = () => {
             Register assets and record the client's scan authorization (approval, evidence, validity window, allowed tools) — scans are launched from an engagement and only run while an authorization covers them
           </p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Client Organization</label>
-          {organizations.length === 0 ? (
-            <Link to="/clients" className="text-sm text-blue-600 hover:underline">
-              Register a client organization first
-            </Link>
-          ) : (
-            <select
-              value={clientOrganizationId ?? ''}
-              onChange={(e) => setClientOrganizationId(Number(e.target.value))}
-              className="w-56 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {organizations.map((org) => (
-                <option key={org.id} value={org.id}>{org.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
       </div>
+
+      <FilterCard values={filters.values} onChange={filters.setValues} onReset={filters.reset} dateLabel="Registered" />
 
       <DataTable
         columns={columns}
@@ -174,7 +162,7 @@ export const ClientAssetsPage: React.FC = () => {
         isLoading={isLoading}
         error={error?.message}
         searchable={false}
-        emptyState={{ title: 'No assets found', description: 'Register an asset for this client organization to get started' }}
+        emptyState={{ title: 'No assets found', description: filters.isActive ? 'No assets match these filters' : 'Register an asset to get started' }}
         actions={{ add: { label: 'Add Asset', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}

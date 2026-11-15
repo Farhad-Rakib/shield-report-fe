@@ -2,6 +2,7 @@ import { BaseRepository } from '../base.repository';
 import { PaginatedResponse } from '../http.types';
 import { ApiResponse } from '../../../domain/dto/auth.dto';
 import { ClientOrganization } from '../../../domain/models/client-organization.model';
+import { ListFilterQuery } from '../../../domain/dto/list-filter.dto';
 import { CreateClientOrganizationRequestDto, UpdateClientOrganizationRequestDto } from '../../../domain/dto/client-organization.dto';
 
 class ClientOrganizationApi extends BaseRepository {
@@ -9,7 +10,7 @@ class ClientOrganizationApi extends BaseRepository {
     super('/client-organizations');
   }
 
-  async getOrganizations(params?: { page?: number; pageSize?: number; search?: string }): Promise<PaginatedResponse<ClientOrganization>> {
+  async getOrganizations(params?: ListFilterQuery & { page?: number; pageSize?: number; search?: string }): Promise<PaginatedResponse<ClientOrganization>> {
     const res = await this.get<ApiResponse<PaginatedResponse<ClientOrganization>>>('', { params });
     if (!res.success) throw new Error(res.message);
     return res.data;

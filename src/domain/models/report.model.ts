@@ -41,6 +41,8 @@ export interface ReportTemplateOption {
   isDefault: boolean;
   engine: 'Html' | 'Word';
   isCustomHtml: boolean;
+  // Built-in White/Gray/Black Box template row; null = admin-created.
+  builtInTestingType?: 'White' | 'Gray' | 'Black' | null;
 }
 
 export interface GenerateReportOptions {

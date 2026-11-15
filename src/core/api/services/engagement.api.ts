@@ -10,13 +10,14 @@ import {
   UpdateEngagementTaskRequestDto,
   UpdateEngagementTaskStatusRequestDto,
 } from '../../../domain/dto/engagement.dto';
+import { ListFilterQuery } from '../../../domain/dto/list-filter.dto';
 
 class EngagementApi extends BaseRepository {
   constructor() {
     super('/engagements');
   }
 
-  async getEngagements(params?: { clientOrganizationId?: number; page?: number; pageSize?: number }): Promise<PaginatedResponse<Engagement>> {
+  async getEngagements(params?: ListFilterQuery & { page?: number; pageSize?: number }): Promise<PaginatedResponse<Engagement>> {
     const res = await this.get<ApiResponse<PaginatedResponse<Engagement>>>('', { params });
     if (!res.success) throw new Error(res.message);
     return res.data;

@@ -1,5 +1,5 @@
 import { BaseRepository } from '../../api/base.repository';
-import { LoginRequestDto, LoginResponseDto, RefreshTokenResponseDto, RegisterRequestDto, RegisterResponseDto, ApiResponse } from '../../../domain/dto/auth.dto';
+import { LoginRequestDto, LoginResponseDto, RefreshTokenResponseDto, ApiResponse } from '../../../domain/dto/auth.dto';
 import { IAuthService } from '../auth.service.interface';
 
 export interface ForgotPasswordRequestDto {
@@ -25,13 +25,6 @@ export class AuthService extends BaseRepository implements IAuthService {
     return response.data;
   }
 
-  async register(dto: RegisterRequestDto): Promise<RegisterResponseDto> {
-    const response = await this.post<ApiResponse<RegisterResponseDto>>('/register', dto);
-    if (!response.success) {
-      throw new Error(response.message || 'Registration failed');
-    }
-    return response.data;
-  }
 
   async logout(): Promise<void> {
     // The refresh token lives in an httpOnly cookie the browser controls, so only the

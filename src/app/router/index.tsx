@@ -26,6 +26,8 @@ import { LlmConfigurationPage } from '../../features/llm-configuration/pages/Llm
 import { LlmPromptsPage } from '../../features/llm-prompts/pages/LlmPromptsPage';
 import { CustomToolsPage } from '../../features/custom-tools/pages/CustomToolsPage';
 import { ReportTemplatesPage } from '../../features/report-templates/pages/ReportTemplatesPage';
+import { FindingsReportPage } from '../../features/findings-report/pages/FindingsReportPage';
+import { LlmProviderCatalogPage } from '../../features/llm-provider-catalog/pages/LlmProviderCatalogPage';
 import { ClientOrganizationsPage } from '../../features/client-organizations/pages/ClientOrganizationsPage';
 import { ClientAssetsPage } from '../../features/client-assets/pages/ClientAssetsPage';
 import { ScansListPage } from '../../features/scans/pages/ScansListPage';
@@ -180,6 +182,22 @@ export const router = createBrowserRouter([
         element: (
           <PermissionGuard permissions={[Permissions.LlmProviderConfigurationsRead]}>
             <LlmConfigurationPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'llm-provider-catalog',
+        element: (
+          <PermissionGuard permissions={[Permissions.LlmProviderConfigurationsRead]}>
+            <LlmProviderCatalogPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'findings-report',
+        element: (
+          <PermissionGuard permissions={[Permissions.FindingsReportRead]}>
+            <FindingsReportPage />
           </PermissionGuard>
         ),
       },

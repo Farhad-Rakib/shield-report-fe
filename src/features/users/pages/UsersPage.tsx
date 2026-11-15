@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Mail, Eye } from 'lucide-react';
+import { Pencil, Mail, Eye, UserX, UserCheck } from 'lucide-react';
+import { ConfirmDialog } from '../../../components/ui/Dialog/ConfirmDialog';
+import { isSuperAdmin, useAuthStore } from '../../auth/store/auth.store';
+import { Permissions } from '../../../core/constants/permissions';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
@@ -33,17 +36,20 @@ class UsersApi extends BaseRepository {
     if (!res.success) throw new Error(res.message);
     return res.data;
   }
-  async updateRoles(userId: number, roleIds: number[]): Promise<UserDto> {
-    const res = await this.put<ApiResponse<UserDto>>(`/${userId}/roles`, { roleIds });
+  // Staff users only; client users are invited (Registration Invites) so they get an organization.
+  async create(dto: { fullName: string; email: string; password: string; roleIds: number[] }): Promise<UserDto> {
+    const res = await this.post<ApiResponse<UserDto>>('', dto);
     if (!res.success) throw new Error(res.message);
     return res.data;
   }
-}
-
-class AuthRegisterApi extends BaseRepository {
-  constructor() { super('/Auth'); }
-  async register(dto: { fullName: string; email: string; password: string; roles: string[] }): Promise<any> {
-    const res = await this.post<ApiResponse<any>>('/register', dto);
+  // Users are never deleted, only deactivated (they can't sign in) and reactivated.
+  async setStatus(userId: number, isActive: boolean): Promise<UserDto> {
+    const res = await this.put<ApiResponse<UserDto>>(`/${userId}/status`, { isActive });
+    if (!res.success) throw new Error(res.message);
+    return res.data;
+  }
+  async updateRoles(userId: number, roleIds: number[]): Promise<UserDto> {
+    const res = await this.put<ApiResponse<UserDto>>(`/${userId}/roles`, { roleIds });
     if (!res.success) throw new Error(res.message);
     return res.data;
   }
@@ -59,7 +65,6 @@ class RolesListApi extends BaseRepository {
 }
 
 const usersApi = new UsersApi();
-const authRegisterApi = new AuthRegisterApi();
 const rolesListApi = new RolesListApi();
 
 export const UsersPage: React.FC = () => {
@@ -67,6 +72,10 @@ export const UsersPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editUser, setEditUser] = useState<UserDto | null>(null);
   const [viewUser, setViewUser] = useState<UserDto | null>(null);
+  const [statusUser, setStatusUser] = useState<UserDto | null>(null);
+  const currentUserId = Number(useAuthStore((s) => s.tokenPayload?.sub) ?? 0);
+  const canUpdateUsers = useAuthStore((s) => s.hasPermission)(Permissions.UsersUpdate);
+  const callerIsSuperAdmin = isSuperAdmin(useAuthStore((s) => s.tokenPayload));
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -88,8 +97,8 @@ export const UsersPage: React.FC = () => {
   });
 
   const createMutation = useMutation({
-    mutationFn: (dto: { fullName: string; email: string; password: string; roles: string[] }) =>
-      authRegisterApi.register(dto),
+    mutationFn: (dto: { fullName: string; email: string; password: string; roleIds: number[] }) =>
+      usersApi.create(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['staff-users-picker'] });
@@ -97,6 +106,19 @@ export const UsersPage: React.FC = () => {
       setShowAddModal(false);
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || err.message || 'Failed to create user'),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ userId, isActive }: { userId: number; isActive: boolean }) => usersApi.setStatus(userId, isActive),
+    onSuccess: (user) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['staff-users-picker'] });
+      toast.success(user.isActive ? `${user.fullName} activated` : `${user.fullName} deactivated`);
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { message?: string } }; message?: string };
+      toast.error(e?.response?.data?.message || e?.message || 'Failed to change user status');
+    },
   });
 
   const updateRolesMutation = useMutation({
@@ -160,6 +182,20 @@ export const UsersPage: React.FC = () => {
   const rowActions: RowAction<UserDto>[] = [
     { icon: Eye, label: 'View', onClick: (user) => setViewUser(user), variant: 'secondary' },
     { icon: Pencil, label: 'Edit Roles', onClick: (user) => setEditUser(user), variant: 'primary' },
+    {
+      icon: UserX,
+      label: 'Deactivate',
+      onClick: (user) => setStatusUser(user),
+      variant: 'danger',
+      show: (user) => canUpdateUsers && user.isActive && user.id !== currentUserId,
+    },
+    {
+      icon: UserCheck,
+      label: 'Activate',
+      onClick: (user) => setStatusUser(user),
+      variant: 'success',
+      show: (user) => canUpdateUsers && !user.isActive,
+    },
   ];
 
   const createFields: FormField[] = [
@@ -171,7 +207,11 @@ export const UsersPage: React.FC = () => {
       label: 'Role',
       type: 'select',
       required: true,
-      options: roles.map(r => ({ label: r.name, value: r.name })),
+      // Client roles are invite-only; only a SuperAdmin can create a SuperAdmin.
+      options: roles
+        .filter(r => r.name !== 'CLIENT_ADMIN' && r.name !== 'CLIENT_USER')
+        .filter(r => callerIsSuperAdmin || r.name !== 'SuperAdmin')
+        .map(r => ({ label: r.name, value: r.id })),
     },
   ];
 
@@ -191,7 +231,7 @@ export const UsersPage: React.FC = () => {
       fullName: data.fullName,
       email: data.email,
       password: data.password,
-      roles: data.role ? [data.role] : [],
+      roleIds: data.role ? [Number(data.role)] : [],
     });
   };
 
@@ -292,6 +332,23 @@ export const UsersPage: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        isOpen={statusUser !== null}
+        onClose={() => setStatusUser(null)}
+        onConfirm={() => {
+          if (statusUser) statusMutation.mutate({ userId: statusUser.id, isActive: !statusUser.isActive });
+          setStatusUser(null);
+        }}
+        title={statusUser?.isActive ? 'Deactivate user' : 'Activate user'}
+        message={
+          statusUser?.isActive
+            ? `Deactivate ${statusUser.fullName}? They won't be able to sign in. Their engagements, findings and history stay as they are, and you can reactivate them at any time.`
+            : `Activate ${statusUser?.fullName ?? ''}? They will be able to sign in again with their existing roles.`
+        }
+        confirmText={statusUser?.isActive ? 'Deactivate' : 'Activate'}
+        variant={statusUser?.isActive ? 'danger' : 'info'}
+      />
     </div>
   );
 };

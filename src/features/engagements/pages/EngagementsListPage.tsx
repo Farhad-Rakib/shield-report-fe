@@ -1,12 +1,13 @@
 import { TestingType, TESTING_TYPE_LABELS } from '../../../domain/models/engagement.model';
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Eye } from 'lucide-react';
 import { DataTable, Column, RowAction } from '../../../components/table/DataTable';
 import { Modal } from '../../../components/ui/Modal/Modal';
 import { DynamicForm, FormField } from '../../../components/form/DynamicForm';
 import { toast } from '../../../components/ui/Toast/toast.store';
+import { FilterCard, useListFilters } from '../../../components/ui/FilterCard/FilterCard';
 import { EngagementStatusBadge } from '../../../components/badges/PentestBadges';
 import { engagementApi } from '../../../core/api/services/engagement.api';
 import { clientOrganizationApi } from '../../../core/api/services/client-organization.api';
@@ -17,7 +18,7 @@ import { CreateEngagementRequestDto } from '../../../domain/dto/engagement.dto';
 export const EngagementsListPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [clientOrganizationId, setClientOrganizationId] = useState<number | null>(null);
+  const filters = useListFilters();
   const [showAddModal, setShowAddModal] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -28,15 +29,10 @@ export const EngagementsListPage: React.FC = () => {
   });
   const organizations = orgData?.data ?? [];
 
-  useEffect(() => {
-    if (clientOrganizationId === null && organizations.length > 0) {
-      setClientOrganizationId(organizations[0].id);
-    }
-  }, [organizations, clientOrganizationId]);
-
+  // A page number valid for one filter combination can be out of range for another.
   useEffect(() => {
     setPage(1);
-  }, [clientOrganizationId]);
+  }, [filters.params]);
 
   const { data: usersData } = useQuery({
     queryKey: ['staff-users-picker'],
@@ -45,16 +41,15 @@ export const EngagementsListPage: React.FC = () => {
   const pentesters = (usersData ?? []).filter((u) => u.roles.includes('PENTESTER'));
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['engagements', clientOrganizationId, page, pageSize],
-    queryFn: () => engagementApi.getEngagements({ clientOrganizationId: clientOrganizationId!, page, pageSize }),
-    enabled: clientOrganizationId !== null,
+    queryKey: ['engagements', filters.params, page, pageSize],
+    queryFn: () => engagementApi.getEngagements({ ...filters.params, page, pageSize }),
   });
   const engagements = data?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: (dto: CreateEngagementRequestDto) => engagementApi.createEngagement(dto),
     onSuccess: (engagement) => {
-      queryClient.invalidateQueries({ queryKey: ['engagements', clientOrganizationId] });
+      queryClient.invalidateQueries({ queryKey: ['engagements'] });
       toast.success('Engagement created successfully');
       setShowAddModal(false);
       navigate(`/engagements/${engagement.id}`);
@@ -63,6 +58,14 @@ export const EngagementsListPage: React.FC = () => {
   });
 
   const createFields: FormField[] = [
+    {
+      name: 'clientOrganizationId',
+      label: 'Client Organization',
+      type: 'select',
+      required: true,
+      defaultValue: filters.values.clientOrganizationId,
+      options: organizations.map((org) => ({ label: org.name, value: String(org.id) })),
+    },
     { name: 'title', label: 'Title', type: 'text', required: true, placeholder: 'Q3 External Pentest' },
     {
       name: 'leadPentesterId',
@@ -86,7 +89,7 @@ export const EngagementsListPage: React.FC = () => {
 
   const handleCreate = (data: Record<string, any>) => {
     createMutation.mutate({
-      clientOrganizationId: clientOrganizationId!,
+      clientOrganizationId: Number(data.clientOrganizationId),
       title: data.title,
       leadPentesterId: Number(data.leadPentesterId),
       scope: data.scope || null,
@@ -98,6 +101,7 @@ export const EngagementsListPage: React.FC = () => {
 
   const columns: Column<Engagement>[] = [
     { key: 'title', label: 'Title' },
+    { key: 'clientOrganizationName', label: 'Client' },
     { key: 'leadPentesterName', label: 'Pentester' },
     { key: 'status', label: 'Status', render: (_, e) => <EngagementStatusBadge status={e.status} /> },
     {
@@ -124,25 +128,9 @@ export const EngagementsListPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Engagements</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Scope and track pentest engagements per client</p>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Client Organization</label>
-          {organizations.length === 0 ? (
-            <Link to="/clients" className="text-sm text-blue-600 hover:underline">
-              Register a client organization first
-            </Link>
-          ) : (
-            <select
-              value={clientOrganizationId ?? ''}
-              onChange={(e) => setClientOrganizationId(Number(e.target.value))}
-              className="w-56 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {organizations.map((org) => (
-                <option key={org.id} value={org.id}>{org.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
       </div>
+
+      <FilterCard values={filters.values} onChange={filters.setValues} onReset={filters.reset} dateLabel="Active" />
 
       <DataTable
         columns={columns}
@@ -150,7 +138,7 @@ export const EngagementsListPage: React.FC = () => {
         isLoading={isLoading}
         error={error?.message}
         searchable={false}
-        emptyState={{ title: 'No engagements found', description: 'Create an engagement for this client organization to get started' }}
+        emptyState={{ title: 'No engagements found', description: filters.isActive ? 'No engagements match these filters' : 'Create an engagement to get started' }}
         actions={{ add: { label: 'New Engagement', onClick: () => setShowAddModal(true) } }}
         rowActions={rowActions}
         onRetry={() => refetch()}
