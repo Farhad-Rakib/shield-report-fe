@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../auth/store/auth.store';
 import { Permissions } from '../../../core/constants/permissions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FlaskConical, Lock, Save, Wrench } from 'lucide-react';
+import { Filter, FlaskConical, Gauge, Lock, RotateCcw, Save, Wrench } from 'lucide-react';
 import { toast } from '../../../components/ui/Toast/toast.store';
 import { scanToolApi } from '../../../core/api/services/scan-tool.api';
-import { ReconftwOptions, ScanToolSetting, ScanToolTestResult, UpdateScanToolSetting } from '../../../domain/models/scan-tool.model';
+import { ReconftwOptions, ScanQueueLimits, ScanToolSetting, ScanToolTestResult, UpdateScanToolSetting } from '../../../domain/models/scan-tool.model';
 
 const inputClass =
   'w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -135,12 +135,20 @@ const ReconftwModulesEditor: React.FC<{ value: ReconftwOptions; memoryMb: number
 
 // One editable card per tool. Changes apply to scans queued after saving; already queued or
 // running scans keep the settings they were queued with.
-const ToolCard: React.FC<{ setting: ScanToolSetting }> = ({ setting }) => {
+const ToolCard: React.FC<{ setting: ScanToolSetting; maxParallelUpperBound: number; onDirtyChange: (dirty: boolean) => void }> = ({ setting, maxParallelUpperBound, onDirtyChange }) => {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<UpdateScanToolSetting>(setting);
   const [includeTags, setIncludeTags] = useState((setting.nuclei?.includeTags ?? []).join(', '));
   const [excludeTags, setExcludeTags] = useState((setting.nuclei?.excludeTags ?? []).join(', '));
   const [testResult, setTestResult] = useState<ScanToolTestResult | null>(null);
+
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(setting) ||
+    includeTags !== (setting.nuclei?.includeTags ?? []).join(', ') ||
+    excludeTags !== (setting.nuclei?.excludeTags ?? []).join(', ');
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     setDraft(setting);
@@ -195,7 +203,7 @@ const ToolCard: React.FC<{ setting: ScanToolSetting }> = ({ setting }) => {
         <NumberField label="Timeout (min)" value={draft.timeoutMinutes} min={1} max={1440} onChange={(v) => set({ timeoutMinutes: v })} />
         <NumberField label="Memory (MB)" value={draft.memoryMb} min={128} max={8192} step={128} onChange={(v) => set({ memoryMb: v })} />
         <NumberField label="CPUs" value={draft.cpus} min={0.25} max={4} step={0.25} onChange={(v) => set({ cpus: v })} />
-        <NumberField label="Parallel scans" value={draft.maxParallel} min={1} max={3} hint="1–3" onChange={(v) => set({ maxParallel: v })} />
+        <NumberField label="Parallel scans" value={draft.maxParallel} min={1} max={maxParallelUpperBound} hint={`1–${maxParallelUpperBound}`} onChange={(v) => set({ maxParallel: v })} />
       </div>
 
       {draft.naabu && (
@@ -276,7 +284,7 @@ const ToolCard: React.FC<{ setting: ScanToolSetting }> = ({ setting }) => {
         </button>
         <button
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || !dirty}
           className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
         >
           <Save className="w-4 h-4" /> {saveMutation.isPending ? 'Saving…' : 'Save'}
@@ -295,10 +303,108 @@ const ToolCard: React.FC<{ setting: ScanToolSetting }> = ({ setting }) => {
   );
 };
 
+// Global limits: how many scans one client can have queued or running at once, and the size of
+// the worker pool shared by all custom tools. Per-tool parallelism is set on each tool.
+const LimitsCard: React.FC<{ limits: ScanQueueLimits; onDirtyChange: (dirty: boolean) => void }> = ({ limits, onDirtyChange }) => {
+  const queryClient = useQueryClient();
+  const [perClient, setPerClient] = useState(limits.maxConcurrentScansPerClient);
+  const [customParallel, setCustomParallel] = useState(limits.customToolMaxParallel);
+
+  useEffect(() => {
+    setPerClient(limits.maxConcurrentScansPerClient);
+    setCustomParallel(limits.customToolMaxParallel);
+  }, [limits]);
+
+  const dirty = perClient !== limits.maxConcurrentScansPerClient || customParallel !== limits.customToolMaxParallel;
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
+
+  const save = useMutation({
+    mutationFn: () => scanToolApi.updateLimits({ maxConcurrentScansPerClient: perClient, customToolMaxParallel: customParallel }),
+    onSuccess: (result) => {
+      queryClient.setQueryData(['scan-tool-limits'], result);
+      toast.success('Scan limits saved');
+    },
+    onError: (err: unknown) => toast.error(errorMessage(err, 'Failed to save scan limits')),
+  });
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Scan limits</h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400">Apply to every tool. Changes take effect within about 15 seconds; no restart needed.</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <NumberField
+            label="Active scans per client"
+            hint={`1–${limits.maxConcurrentScansPerClientUpperBound}`}
+            value={perClient}
+            min={1}
+            max={limits.maxConcurrentScansPerClientUpperBound}
+            onChange={setPerClient}
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Queued plus running scans one client organization can have at once. Starting more is refused until some finish.</p>
+        </div>
+        <div>
+          <NumberField
+            label="Parallel custom-tool scans"
+            hint={`1–${limits.maxParallelUpperBound}`}
+            value={customParallel}
+            min={1}
+            max={limits.maxParallelUpperBound}
+            onChange={setCustomParallel}
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Shared by all registered custom tools. Built-in tools have their own "Parallel scans" setting.</p>
+        </div>
+      </div>
+      <div className="flex justify-end">
+        <button
+          onClick={() => save.mutate()}
+          disabled={save.isPending || !dirty}
+          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          <Save className="w-4 h-4" /> {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+type StatusFilter = 'all' | 'enabled' | 'disabled';
+const LIMITS = 'limits';
+
 export const ScanToolsPage: React.FC = () => {
   const { data: settings = [], isLoading, error } = useQuery({ queryKey: ['scan-tool-settings'], queryFn: () => scanToolApi.getAll() });
-
+  const { data: limits } = useQuery({ queryKey: ['scan-tool-limits'], queryFn: () => scanToolApi.getLimits() });
   const canManageCustom = useAuthStore((st) => st.hasPermission)(Permissions.CustomScanToolsManage);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [dirty, setDirty] = useState(false);
+
+  const visible = settings.filter((s) => status === 'all' || (status === 'enabled' ? s.isEnabled : !s.isEnabled));
+  const requested = searchParams.get('tool');
+  // Fall back to the first visible tool when the requested one is filtered out or unknown.
+  const selected = requested === LIMITS || visible.some((s) => s.tool === requested) ? requested! : visible[0]?.tool ?? LIMITS;
+  const selectedSetting = settings.find((s) => s.tool === selected);
+
+  const confirmDiscard = () => !dirty || window.confirm('You have unsaved changes. Discard them?');
+  const select = (tool: string) => {
+    if (tool === selected || !confirmDiscard()) return;
+    setDirty(false);
+    setSearchParams((p) => {
+      p.set('tool', tool);
+      return p;
+    }, { replace: true });
+  };
+  const changeStatus = (next: StatusFilter) => {
+    const stillVisible = selected === LIMITS || settings.some((s) => s.tool === selected && (next === 'all' || (next === 'enabled' ? s.isEnabled : !s.isEnabled)));
+    if (!stillVisible && !confirmDiscard()) return;
+    if (!stillVisible) setDirty(false);
+    setStatus(next);
+  };
 
   return (
     <div className="space-y-6">
@@ -309,7 +415,7 @@ export const ScanToolsPage: React.FC = () => {
             <Wrench className="w-5 h-5" /> Tool Configuration
           </h1>
           <p className="page-subtitle">
-            Turn the built-in tools on or off and tune their limits and options. Changes apply to scans started after saving. Images are pinned by the deployment and can't be changed here.
+            Pick a tool to turn it on or off and tune its limits and options. Changes apply to scans started after saving. Images are pinned by the deployment and can't be changed here.
           </p>
         </div>
         {canManageCustom && (
@@ -319,11 +425,58 @@ export const ScanToolsPage: React.FC = () => {
         )}
       </div>
 
+      <div className="panel px-3 py-2.5">
+        <div className="flex items-end gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 self-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mr-1">
+            <Filter className="w-3.5 h-3.5" />
+            Filters
+          </div>
+          <div>
+            <label className="label" htmlFor="filter-tool-status">Status</label>
+            <select id="filter-tool-status" className="input w-40" value={status} onChange={(e) => changeStatus(e.target.value as StatusFilter)}>
+              <option value="all">All tools</option>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="filter-tool">Tool</label>
+            <select id="filter-tool" className="input w-64" value={selected} onChange={(e) => select(e.target.value)}>
+              {visible.map((s) => (
+                <option key={s.tool} value={s.tool}>
+                  {s.label} ({s.tool}){s.isEnabled ? '' : ' · disabled'}
+                </option>
+              ))}
+              <option value={LIMITS}>Scan limits (all tools)</option>
+            </select>
+          </div>
+          {status !== 'all' && (
+            <button type="button" className="btn-ghost btn-sm self-end mb-0.5" onClick={() => changeStatus('all')}>
+              <RotateCcw className="w-3.5 h-3.5" /> Reset
+            </button>
+          )}
+          <div className="ml-auto self-center text-xs text-gray-500 dark:text-gray-400">
+            {settings.filter((s) => s.isEnabled).length} of {settings.length} tools enabled
+            {limits && <> · {limits.maxConcurrentScansPerClient} active scans per client</>}
+          </div>
+        </div>
+        {visible.length === 0 && !isLoading && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">No {status} tools.</p>}
+      </div>
+
       {isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>}
       {error && <p className="text-sm text-red-600 dark:text-red-400">{(error as Error).message}</p>}
-      {settings.map((setting) => (
-        <ToolCard key={setting.tool} setting={setting} />
-      ))}
+
+      {selected === LIMITS ? (
+        limits ? (
+          <LimitsCard limits={limits} onDirtyChange={setDirty} />
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400 inline-flex items-center gap-2"><Gauge className="w-4 h-4" /> Loading limits…</p>
+        )
+      ) : (
+        selectedSetting && (
+          <ToolCard key={selectedSetting.tool} setting={selectedSetting} maxParallelUpperBound={limits?.maxParallelUpperBound ?? 20} onDirtyChange={setDirty} />
+        )
+      )}
     </div>
   );
 };

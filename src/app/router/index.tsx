@@ -1,5 +1,6 @@
 import { PortalReportsPage } from '../../features/portal/pages/PortalReportsPage';
 import { ScanToolsPage } from '../../features/scan-tools/pages/ScanToolsPage';
+import { EmailSettingsPage } from '../../features/email-settings/pages/EmailSettingsPage';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { DashboardLayout } from '../layouts/DashboardLayout';
@@ -150,6 +151,14 @@ export const router = createBrowserRouter([
         element: (
           <PermissionGuard permissions={[Permissions.ScanToolsManage]}>
             <ScanToolsPage />
+          </PermissionGuard>
+        ),
+      },
+      {
+        path: 'email-settings',
+        element: (
+          <PermissionGuard permissions={[Permissions.EmailSettingsManage]}>
+            <EmailSettingsPage />
           </PermissionGuard>
         ),
       },

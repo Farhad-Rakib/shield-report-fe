@@ -32,6 +32,7 @@ export const Permissions = {
   // Scan Tools settings page.
   ScanToolsManage: 'scan-tools.manage',
   CustomScanToolsManage: 'custom-scan-tools.manage',
+  EmailSettingsManage: 'email-settings.manage',
   // Email approved reports to the client; client-portal access to approved reports.
   VulnerabilityReportsSend: 'vulnerability-reports.send',
   ClientReportsRead: 'client-reports.read',

@@ -147,7 +147,7 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
   );
 
   return (
-    <Modal isOpen={!!template} onClose={onClose} title={`Template studio · ${template?.name ?? ''}`} size="xl">
+    <Modal isOpen={!!template} onClose={onClose} title={`Template studio · ${template?.name ?? ''}`} size="full">
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 dark:border-gray-800">
           <div className="flex">
@@ -166,7 +166,7 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
         </div>
 
         {tab === 'html' && (
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
             <div className="space-y-2 min-w-0">
               {isLoading ? (
                 <p className="text-sm text-gray-500">Loading…</p>
@@ -177,14 +177,14 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
                   onChange={(e) => setContent(e.target.value)}
                   spellCheck={false}
                   aria-label="Template HTML"
-                  className="input h-[58vh] font-mono text-xs leading-relaxed"
+                  className="input h-[72vh] min-h-[420px] resize-y font-mono text-xs leading-relaxed"
                 />
               )}
               <p className="text-2xs text-gray-500 dark:text-gray-400">
                 Put user or AI text in with <code className="code-chip">{'{{{text X}}}'}</code> (escaped). Rendering has no network access: use <code className="code-chip">{'{{asset "logo.png"}}'}</code> or data URIs for images.
               </p>
             </div>
-            <div className="space-y-3 max-h-[62vh] overflow-auto pr-1">
+            <div className="space-y-3 max-h-[76vh] overflow-auto pr-1">
               <div>
                 <p className="label">Your dynamic fields</p>
                 {fields.length === 0 ? (
@@ -290,7 +290,7 @@ export const HtmlTemplateEditorModal: React.FC<{ template: ReportTemplate | null
                 <Eye className="w-3.5 h-3.5" /> Refresh
               </button>
             </div>
-            <div className="relative h-[62vh] rounded-md border border-gray-200 dark:border-gray-800 bg-white overflow-hidden">
+            <div className="relative h-[76vh] rounded-md border border-gray-200 dark:border-gray-800 bg-white overflow-hidden">
               {previewError ? (
                 <p className="p-4 text-sm text-red-600">{previewError}</p>
               ) : previewHtml ? (

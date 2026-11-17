@@ -1,4 +1,4 @@
-import { LlmProvider } from '../models/llm-provider-config.model';
+import { LlmEffort, LlmProvider } from '../models/llm-provider-config.model';
 
 export interface CreateLlmProviderConfigurationRequestDto {
   name: string | null;
@@ -9,6 +9,7 @@ export interface CreateLlmProviderConfigurationRequestDto {
   temperature: number;
   maxOutputTokens: number;
   promptTemplate: string | null;
+  effort: LlmEffort | null;
 }
 
 // apiKey blank/omitted means "keep the existing encrypted key" — the read model never returns
@@ -21,4 +22,5 @@ export interface UpdateLlmProviderConfigurationRequestDto {
   temperature: number;
   maxOutputTokens: number;
   promptTemplate: string | null;
+  effort: LlmEffort | null;
 }

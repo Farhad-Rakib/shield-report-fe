@@ -1,7 +1,7 @@
 import { BaseRepository } from '../base.repository';
 import { ApiResponse } from '../../../domain/dto/auth.dto';
 import { ScanTool } from '../../../domain/models/scan.model';
-import { AvailableScanTool, ReconftwModule, ScanToolSetting, ScanToolTestResult, UpdateScanToolSetting } from '../../../domain/models/scan-tool.model';
+import { AvailableScanTool, ReconftwModule, ScanQueueLimits, ScanToolSetting, ScanToolTestResult, UpdateScanQueueLimits, UpdateScanToolSetting } from '../../../domain/models/scan-tool.model';
 
 class ScanToolApi extends BaseRepository {
   constructor() {
@@ -29,6 +29,18 @@ class ScanToolApi extends BaseRepository {
 
   async update(tool: ScanTool, dto: UpdateScanToolSetting): Promise<ScanToolSetting> {
     const res = await this.put<ApiResponse<ScanToolSetting>>(`/${tool}`, dto);
+    if (!res.success) throw new Error(res.message);
+    return res.data;
+  }
+
+  async getLimits(): Promise<ScanQueueLimits> {
+    const res = await this.get<ApiResponse<ScanQueueLimits>>('/limits');
+    if (!res.success) throw new Error(res.message);
+    return res.data;
+  }
+
+  async updateLimits(dto: UpdateScanQueueLimits): Promise<ScanQueueLimits> {
+    const res = await this.put<ApiResponse<ScanQueueLimits>>('/limits', dto);
     if (!res.success) throw new Error(res.message);
     return res.data;
   }

@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 // Load test: N concurrent users browse the app while queueing M harmless scans each, then
 // exercise report generation (dynamic sections + custom fields) and findings PDF export under
 // concurrency. Scans use an alpine custom tool that sleeps and echoes: it never contacts the
@@ -5,6 +8,7 @@
 //
 //   node loadtest/scan-load.mjs            # 25 users x 4 scans
 //   USERS=10 SCANS_PER_USER=2 node loadtest/scan-load.mjs
+//   Needs ANTHROPIC_API_KEY in the environment (reports use Draft with AI).
 //
 // Talks to the API's localhost debug port, like the E2E suite. Everything it creates is named
 // LOAD-<run>; cleanup deletes what the API allows and deactivates the rest.
@@ -19,6 +23,21 @@ const EXPORTS = Math.min(10, USERS);
 const RUN = Date.now().toString(36);
 const P = `LOAD-${RUN}`;
 const PASSWORD = 'LoadTest@12345!';
+// Generated reports (HTML + PDF) and the AI-drafted sections are saved here for review.
+const OUT = process.env.OUT_DIR ?? fileURLToPath(new URL(`./results-scan/${RUN}/`, import.meta.url));
+mkdirSync(OUT, { recursive: true });
+// Reports are generated with "Draft with AI" on: the app's narrative job fills Executive Summary,
+// Key Findings and Key Recommendations. The key comes from the environment only; the test adds a
+// temporary Anthropic provider, activates it, and restores the previously active one at the end.
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-5-5';
+const ANTHROPIC_EFFORT = process.env.ANTHROPIC_EFFORT ?? 'low';
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 10 * 60_000);
+const PLACEHOLDER = '<To be completed>';
+if (!ANTHROPIC_KEY) {
+  console.error('ANTHROPIC_API_KEY is not set. Export it first: ANTHROPIC_API_KEY=sk-ant-api03-... node loadtest/scan-load.mjs');
+  process.exit(2);
+}
 
 // ---------------------------------------------------------------- metrics
 const samples = []; // { name, ms, status }
@@ -75,6 +94,88 @@ function pct(arr, p) {
 
 // ---------------------------------------------------------------- setup
 const ctx = { users: [], assets: [], scans: [], reports: [], templates: [] };
+
+async function aiSetup(admin) {
+  console.log(`\n== AI provider (Anthropic ${ANTHROPIC_MODEL}, ${ANTHROPIC_EFFORT} effort, key from ANTHROPIC_API_KEY)`);
+  const existing = await call(admin, 'GET', '/LlmProviderConfigurations');
+  ctx.previousLlm = existing.filter((c) => c.isActive).map((c) => c.id);
+  const cfg = await call(admin, 'POST', '/LlmProviderConfigurations', {
+    name: `${P} Anthropic ${ANTHROPIC_MODEL}`, provider: 'Anthropic', apiKey: ANTHROPIC_KEY, model: ANTHROPIC_MODEL,
+    baseUrl: null, temperature: 0.2, maxOutputTokens: 8192, promptTemplate: null, effort: ANTHROPIC_EFFORT,
+  });
+  ctx.llmId = cfg.id;
+  const test = await call(admin, 'POST', `/LlmProviderConfigurations/${cfg.id}/test`);
+  check('Anthropic provider test succeeds', !!test?.success, test?.success ? `${test.latencyMs} ms` : (test?.error ?? '').slice(0, 200));
+  if (!test?.success) throw new Error('Anthropic provider test failed; check ANTHROPIC_API_KEY');
+  await call(admin, 'POST', `/LlmProviderConfigurations/${cfg.id}/activate`);
+}
+
+async function aiRestore(admin) {
+  if (!ctx.llmId) return;
+  for (const id of ctx.previousLlm ?? []) await call(admin, 'POST', `/LlmProviderConfigurations/${id}/activate`).catch(() => {});
+  await call(admin, 'DELETE', `/LlmProviderConfigurations/${ctx.llmId}`).catch((e) => console.log(`  could not delete temp provider: ${e.message.slice(0, 160)}`));
+}
+
+// Polls until no report is still Drafting (or the AI timeout passes); returns the final DTOs.
+async function waitForDrafts(token, ids) {
+  const started = Date.now();
+  let reports = [];
+  for (;;) {
+    reports = await Promise.all(ids.map((id) => call(token, 'GET', `/reports/${id}`, undefined, { name: 'GET report (draft poll)' })));
+    if (reports.every((r) => r.narrativeStatus !== 'Drafting') || Date.now() - started > AI_TIMEOUT_MS) break;
+    await sleep(3000);
+  }
+  return { reports, seconds: (Date.now() - started) / 1000 };
+}
+
+const isDrafted = (r) => r.narrativeStatus === 'Drafted'
+  && [r.executiveSummary, r.keyFindings, r.keyRecommendations].every((s) => s && s.trim().length > 80 && !s.includes(PLACEHOLDER) && !/^insufficient data to generate this section\.?$/i.test(s.trim()));
+
+// The echo tool's findings ("found <host>", no description) give the AI nothing to write about, and
+// the narrative prompt rightly answers "Insufficient data". Add realistic manual findings, the
+// kind a pentester records by hand, so the drafted sections have substance.
+const MANUAL_FINDINGS = [
+  { title: 'SQL injection in product search parameter', severity: 'Critical', cvssScore: 9.8, path: '/api/products/search?q=',
+    description: 'The q parameter is concatenated into a SQL query without parameterisation. Boolean- and time-based payloads confirmed the injection and allowed reading arbitrary tables.',
+    impact: 'An unauthenticated attacker can read or modify the whole database, including customer records and password hashes.',
+    recommendation: 'Use parameterised queries or an ORM for every database call, validate input server-side, and run the database account with least privilege.' },
+  { title: 'Broken object level authorization on order details', severity: 'High', cvssScore: 8.1, path: '/api/orders/{id}',
+    description: 'Changing the numeric order id returns other customers\' orders. The API checks that the caller is logged in but not that the order belongs to them.',
+    impact: 'Any registered user can read every customer\'s orders, addresses and partial payment details.',
+    recommendation: 'Enforce ownership checks on every object lookup on the server side and prefer non-sequential identifiers.' },
+  { title: 'Stored cross-site scripting in product reviews', severity: 'High', cvssScore: 7.6, path: '/reviews',
+    description: 'Review text is rendered without output encoding. A review containing a script tag executes in the browser of every user who opens the product page.',
+    impact: 'Session hijacking and actions performed on behalf of other users, including administrators.',
+    recommendation: 'Encode output by context, sanitise rich text with an allow-list, and add a strict Content-Security-Policy.' },
+  { title: 'TLS 1.0 and 1.1 enabled with weak cipher suites', severity: 'Medium', cvssScore: 5.9, path: ':443',
+    description: 'The server negotiates TLS 1.0/1.1 and CBC-mode suites with SHA-1.',
+    impact: 'Downgrade and cryptographic attacks can expose traffic on hostile networks; fails PCI DSS requirements.',
+    recommendation: 'Allow only TLS 1.2 and 1.3 with AEAD cipher suites and enable HSTS.' },
+  { title: 'Missing security headers (CSP, X-Frame-Options)', severity: 'Medium', cvssScore: 4.3, path: '/',
+    description: 'Responses have no Content-Security-Policy, X-Frame-Options or Referrer-Policy headers.',
+    impact: 'Raises the impact of XSS and allows clickjacking of authenticated pages.',
+    recommendation: 'Set a restrictive Content-Security-Policy, frame-ancestors \'none\' (or X-Frame-Options DENY), and a Referrer-Policy.' },
+  { title: 'Verbose error messages disclose stack traces', severity: 'Low', cvssScore: 3.7, path: '/api/login',
+    description: 'Malformed requests return full framework stack traces including file paths and library versions.',
+    impact: 'Helps attackers fingerprint the stack and target known vulnerabilities.',
+    recommendation: 'Return generic error messages to clients and log details server-side only.' },
+];
+
+async function seedManualFindings(admin) {
+  console.log('\n== Manual findings (realistic content for the AI draft)');
+  let n = 0;
+  for (const [i, f] of MANUAL_FINDINGS.entries()) {
+    const asset = ctx.assets[i % ctx.assets.length];
+    const v = await call(admin, 'POST', '/vulnerabilities', {
+      clientOrganizationId: ctx.orgId, clientAssetId: asset.id, engagementId: ctx.engagementId,
+      title: f.title, endpoint: `https://${asset.identifier}${f.path}`, cvssScore: f.cvssScore, cvssVector: null, severity: f.severity,
+      description: f.description, impact: f.impact, proofOfConcept: null, stepsToReproduce: null, referenceLinksJson: null, recommendation: f.recommendation,
+    }, { name: 'POST /vulnerabilities' });
+    await call(admin, 'PATCH', `/vulnerabilities/${v.id}/report-included`, { reportIncluded: true }, { name: 'PATCH report-included' });
+    n++;
+  }
+  check('manual findings recorded', n === MANUAL_FINDINGS.length, `${n}`);
+}
 
 async function setup(admin) {
   console.log(`\n== Setup (${P})`);
@@ -196,22 +297,31 @@ async function reportPhase(admin) {
     const type = /White/.test(tpl.name) ? 'White' : /Gray/.test(tpl.name) ? 'Gray' : 'Black';
     const preview = await call(lead, 'POST', `${engPath}/reports/preview`, { templateId: tpl.id, testingType: type }, { name: 'POST report preview (new)' });
     check(`${type} Box preview renders`, typeof preview === 'string' && preview.length > 1000, `${preview.length} chars`);
-    const report = await call(lead, 'POST', `${engPath}/reports`, { templateId: tpl.id, testingType: type, draftWithAi: false }, { name: 'POST generate report', expect: 201 });
-    ctx.reports.push(report.id);
+    const created = await call(lead, 'POST', `${engPath}/reports`, { templateId: tpl.id, testingType: type, draftWithAi: true }, { name: 'POST generate report', expect: 201 });
+    ctx.reports.push(created.id);
+    check(`${type} Box: Draft with AI queued`, created.narrativeStatus === 'Drafting', created.narrativeStatus);
+    // Executive Summary / Key Findings / Key Recommendations come from the AI draft.
+    const { reports: [report], seconds } = await waitForDrafts(lead, [created.id]);
+    check(`${type} Box: AI drafted Executive Summary, Key Findings, Key Recommendations`, isDrafted(report),
+      `${report.narrativeStatus} in ${seconds.toFixed(0)}s${report.narrativeError ? `: ${report.narrativeError.slice(0, 160)}` : ''}`);
+    ctx.drafts = [...(ctx.drafts ?? []), { type, ...report }];
     const goals = `Load goals ${type} ${RUN}`;
     const limits = `Load limitations ${type} ${RUN}`;
-    await call(lead, 'PATCH', `/reports/${report.id}/narrative`, { executiveSummary: `Exec ${type} ${RUN}`, keyFindings: `Findings ${type} ${RUN}`, keyRecommendations: `Recs ${type} ${RUN}` }, { name: 'PATCH report narrative' });
     await call(lead, 'PATCH', `/reports/${report.id}/sections`, { projectGoals: goals, limitations: limits, showToolNames: false }, { name: 'PATCH report sections' });
     await call(lead, 'POST', `/reports/${report.id}/regenerate`, undefined, { name: 'POST regenerate report' });
     const html = await call(lead, 'GET', `/reports/${report.id}/preview`, undefined, { name: 'GET report preview' });
     // The Black Box template (like its SELISE sample) has no Project Goals section.
     const goalsOk = type === 'Black' ? true : html.includes(goals);
-    check(`${type} Box: edited sections appear in the rendered report`,
-      goalsOk && html.includes(limits) && html.includes(`Exec ${type} ${RUN}`),
-      `goals=${html.includes(goals)} limits=${html.includes(limits)} exec=${html.includes(`Exec ${type} ${RUN}`)}`);
+    const snippet = (s) => (s ?? '').split('\n').map((l) => l.trim().replace(/^[-*\u2022]\s*/, '').replace(/\*\*/g, '')).find((l) => l.length > 30)?.slice(0, 30).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;') ?? '\u0000';
+    const execOk = html.includes(snippet(report.executiveSummary)) || html.includes(snippet(report.executiveSummary).replace(/&#39;/g, '&#x27;'));
+    check(`${type} Box: AI narrative and edited sections appear in the rendered report`,
+      goalsOk && html.includes(limits) && execOk && !html.includes('&lt;To be completed&gt;'),
+      `goals=${html.includes(goals)} limits=${html.includes(limits)} exec=${execOk}`);
+    writeFileSync(`${OUT}/report-${type}-box.html`, html);
     check(`${type} Box: real tool name hidden from client report`, !/naabu|nuclei|reconftw/i.test(html));
     const pdf = await call(lead, 'GET', `/reports/${report.id}/download-pdf`, undefined, { name: 'GET report pdf', raw: true });
     check(`${type} Box: PDF downloads`, pdf.buf.subarray(0, 4).toString() === '%PDF', `${(pdf.buf.length / 1024).toFixed(0)} KB`);
+    writeFileSync(`${OUT}/report-${type}-box.pdf`, pdf.buf);
   }
 
   // Custom template with required + optional dynamic fields.
@@ -229,11 +339,11 @@ async function reportPhase(admin) {
   });
   let missingStatus = 0;
   try {
-    await call(lead, 'POST', `${engPath}/reports`, { templateId: t.id, draftWithAi: false }, { name: 'POST generate report (missing field)' });
+    await call(lead, 'POST', `${engPath}/reports`, { templateId: t.id, draftWithAi: true }, { name: 'POST generate report (missing field)' });
   } catch (e) { missingStatus = e.status; failures.pop(); }
   check('generate without a required dynamic field is rejected', missingStatus === 400, `HTTP ${missingStatus}`);
   const xss = '<script>alert(1)</script>';
-  const r2 = await call(lead, 'POST', `${engPath}/reports`, { templateId: t.id, draftWithAi: false, customFieldValues: { signoff: `Lead ${RUN} ${xss}` } }, { name: 'POST generate report', expect: 201 });
+  const r2 = await call(lead, 'POST', `${engPath}/reports`, { templateId: t.id, draftWithAi: true, customFieldValues: { signoff: `Lead ${RUN} ${xss}` } }, { name: 'POST generate report', expect: 201 });
   ctx.reports.push(r2.id);
   let html = await call(lead, 'GET', `/reports/${r2.id}/preview`);
   check('custom field value and default render', html.includes(`Signed: Lead ${RUN}`) && html.includes('Ticket: TCK-DEFAULT'));
@@ -248,12 +358,17 @@ async function reportPhase(admin) {
   const tpl = builtIns[0];
   const t0 = performance.now();
   const results = await Promise.allSettled(ctx.users.map((u) =>
-    call(u.token, 'POST', `${engPath}/reports`, { templateId: tpl.id, draftWithAi: false }, { name: 'POST generate report (concurrent)', expect: 201 })));
+    call(u.token, 'POST', `${engPath}/reports`, { templateId: tpl.id, draftWithAi: true }, { name: 'POST generate report (concurrent)', expect: 201 })));
   const ok = results.filter((r) => r.status === 'fulfilled');
   ok.forEach((r) => ctx.reports.push(r.value.id));
   const versions = new Set(ok.map((r) => r.value.version));
   check(`${USERS} concurrent report generations succeed`, ok.length === USERS, `${ok.length}/${USERS} in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
   check('concurrent generations get distinct version numbers', versions.size === ok.length, `${versions.size} distinct of ${ok.length}`);
+  const concurrentDrafts = await waitForDrafts(lead, ok.map((r) => r.value.id));
+  const drafted = concurrentDrafts.reports.filter(isDrafted);
+  const draftFailures = concurrentDrafts.reports.filter((r) => !isDrafted(r)).map((r) => `#${r.id} ${r.narrativeStatus} ${(r.narrativeError ?? '').slice(0, 100)}`);
+  check(`${ok.length} concurrent AI drafts complete`, drafted.length === ok.length,
+    `${drafted.length}/${ok.length} in ${concurrentDrafts.seconds.toFixed(0)}s${draftFailures.length ? `; ${draftFailures.slice(0, 3).join(' | ')}` : ''}`);
   const tl = performance.now();
   const list = await call(lead, 'GET', `${engPath}/reports`, undefined, { name: 'GET engagement reports (30 reports)' });
   check('report list stays fast with many reports', performance.now() - tl < 1500, `${list.length} reports in ${(performance.now() - tl).toFixed(0)} ms`);
@@ -293,6 +408,7 @@ async function isolationChecks(admin) {
 // ---------------------------------------------------------------- cleanup
 async function cleanup(admin) {
   console.log('\n== Cleanup');
+  await aiRestore(admin);
   const errs = [];
   const tryDo = async (label, fn) => { try { await fn(); } catch (e) { errs.push(`${label}: ${e.message.slice(0, 160)}`); } };
   for (const id of ctx.reports) await tryDo(`report ${id}`, () => call(admin, 'DELETE', `/reports/${id}`));
@@ -312,6 +428,7 @@ async function cleanup(admin) {
 const admin = await login(ADMIN.email, ADMIN.password);
 const runStart = Date.now();
 try {
+  await aiSetup(admin);
   await setup(admin);
 
   console.log(`\n== Load: ${USERS} concurrent users, ${USERS * SCANS_PER_USER} scans`);
@@ -345,6 +462,7 @@ try {
   check('scan findings became vulnerabilities', vulnCount > 0, `${vulnCount} for ${ASSETS} assets / ${done.length} scans`);
   ctx.vulnCount = vulnCount;
 
+  await seedManualFindings(admin);
   await reportPhase(admin);
   await isolationChecks(admin);
 } catch (e) {
@@ -371,4 +489,8 @@ for (const [name, ms] of Object.entries(rep).sort()) console.log(`  ${name.padEn
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n== ${checks.length - failed.length}/${checks.length} checks passed in ${((Date.now() - runStart) / 1000).toFixed(0)}s`);
 if (failures.length) console.log(`  unexpected HTTP failures (${failures.length}), first 10:\n    ${failures.slice(0, 10).join('\n    ')}`);
+if (ctx.drafts?.length) {
+  writeFileSync(`${OUT}/ai-drafts.md`, ctx.drafts.map((d) => `# ${d.type} Box report #${d.id} (${d.narrativeStatus})\n\n## Executive Summary\n\n${d.executiveSummary}\n\n## Key Findings\n\n${d.keyFindings}\n\n## Key Recommendations\n\n${d.keyRecommendations}\n`).join('\n'));
+  console.log(`\n  AI-drafted sections, report HTML and PDFs: ${OUT}`);
+}
 process.exit(failed.length ? 1 : 0);

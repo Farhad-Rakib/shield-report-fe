@@ -8,7 +8,7 @@ import { toast } from '../../../components/ui/Toast/toast.store';
 import { llmConfigurationApi } from '../../../core/api/services/llm-configuration.api';
 import { llmProviderCatalogApi } from '../../../core/api/services/llm-provider-catalog.api';
 import { LlmProviderCatalogItem } from '../../../domain/models/llm-provider-catalog.model';
-import { LlmProvider, LlmProviderConfiguration, LlmProviderTestResult } from '../../../domain/models/llm-provider-config.model';
+import { LlmEffort, LlmProvider, LlmProviderConfiguration, LlmProviderTestResult } from '../../../domain/models/llm-provider-config.model';
 
 type ApiError = { response?: { data?: { message?: string } }; message?: string };
 const errorMessage = (err: unknown, fallback: string) => {
@@ -95,6 +95,7 @@ interface FormState {
   temperature: string;
   maxOutputTokens: string;
   promptTemplate: string;
+  effort: string;
 }
 
 const emptyForm = (): FormState => ({
@@ -106,6 +107,7 @@ const emptyForm = (): FormState => ({
   temperature: '0.2',
   maxOutputTokens: '2048',
   promptTemplate: '',
+  effort: '',
 });
 
 const inputClass = 'input mt-1';
@@ -131,6 +133,7 @@ const ProviderFormModal: React.FC<{
             temperature: String(editing.temperature),
             maxOutputTokens: String(editing.maxOutputTokens),
             promptTemplate: editing.promptTemplate,
+            effort: editing.effort ?? '',
           }
         : emptyForm(),
     );
@@ -160,6 +163,7 @@ const ProviderFormModal: React.FC<{
         temperature: Number(form.temperature) || 0,
         maxOutputTokens: Number(form.maxOutputTokens) || 1024,
         promptTemplate: null,
+        effort: form.provider === 'Anthropic' && form.effort ? (form.effort as LlmEffort) : null,
       };
       return editing
         ? llmConfigurationApi.update(editing.id, { ...common, apiKey: form.apiKey.trim() || null })
@@ -267,6 +271,19 @@ const ProviderFormModal: React.FC<{
             Max output tokens
             <input type="number" min={64} max={64000} value={form.maxOutputTokens} onChange={(e) => set('maxOutputTokens', e.target.value)} className={inputClass} />
           </label>
+          {form.provider === 'Anthropic' && (
+            <label className="block text-sm text-gray-700 dark:text-gray-300">
+              Effort
+              <select value={form.effort} onChange={(e) => set('effort', e.target.value)} className={inputClass}>
+                <option value="">Model default</option>
+                <option value="low">Low (fastest, cheapest)</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">Extra high</option>
+                <option value="max">Max</option>
+              </select>
+            </label>
+          )}
         </div>
 
         <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -346,7 +363,7 @@ export const LlmConfigurationPage: React.FC = () => {
         <span className={`status-dot ${active ? 'bg-emerald-500' : 'bg-amber-500'}`} />
         {active ? <>Active: <b className="text-gray-900 dark:text-white">{active.name}</b></> : <b className="text-amber-700 dark:text-amber-400">No active provider: AI explanations and report drafting are off</b>}
       </span>
-      {active && <span className="text-gray-500 dark:text-gray-400">Model <span className="mono">{active.model}</span> · max {active.maxOutputTokens} output tokens</span>}
+      {active && <span className="text-gray-500 dark:text-gray-400">Model <span className="mono">{active.model}</span> · max {active.maxOutputTokens} output tokens{active.effort ? ` · ${active.effort} effort` : ''}</span>}
       <span className="text-gray-500 dark:text-gray-400">{configurations.length} configured</span>
     </div>
   );

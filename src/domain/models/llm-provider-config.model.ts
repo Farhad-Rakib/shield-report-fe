@@ -1,5 +1,8 @@
 export type LlmProvider = 'OpenRouter' | 'Gemini' | 'OpenAi' | 'Anthropic' | 'OpenAiCompatible';
 
+// Anthropic only (output_config.effort). null = the model's default.
+export type LlmEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface LlmProviderConfiguration {
   id: number;
   name: string;
@@ -11,6 +14,7 @@ export interface LlmProviderConfiguration {
   maxOutputTokens: number;
   promptTemplate: string;
   isActive: boolean;
+  effort: LlmEffort | null;
 }
 
 export interface LlmProviderTestResult {

@@ -60,3 +60,14 @@ export interface ScanToolTestResult {
   image: string;
   output: string;
 }
+
+// Global scan limits (GET/PUT /scan-tools/limits). The *UpperBound fields are the server's maxima.
+export interface ScanQueueLimits {
+  maxConcurrentScansPerClient: number;
+  customToolMaxParallel: number;
+  maxParallelUpperBound: number;
+  maxConcurrentScansPerClientUpperBound: number;
+  updatedAt: string | null;
+}
+
+export type UpdateScanQueueLimits = Pick<ScanQueueLimits, 'maxConcurrentScansPerClient' | 'customToolMaxParallel'>;
